@@ -60,6 +60,36 @@ def create_user():
         conn.close()
 
 
+@users_bp.route('/<int:user_id>', methods=['PUT'])
+@admin_required
+def update_user(user_id):
+    data = request.get_json()
+    username = data.get('username')
+    role = data.get('role')
+
+    if not username or not role:
+        return jsonify({"msg": "Username and role are required"}), 400
+
+    if role not in ['admin', 'user', 'viewer', 'QC']:
+        return jsonify({"msg": "Invalid role specified. Must be 'admin', 'user', 'viewer', or 'QC'."}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE users SET username = %s, role = %s WHERE id = %s", (username, role, user_id))
+        conn.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"msg": "User not found"}), 404
+        return jsonify({"msg": "User updated successfully"}), 200
+    except mysql.connector.Error as err:
+        if err.errno == 1062: # Duplicate entry
+            return jsonify({"error": f"Username '{username}' already exists."}), 409
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @users_bp.route('/<int:user_id>', methods=['DELETE'])
 @admin_required
 def delete_user(user_id):
