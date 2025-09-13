@@ -60,6 +60,24 @@ def create_user():
         conn.close()
 
 
+@users_bp.route('/<int:user_id>', methods=['DELETE'])
+@admin_required
+def delete_user(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        conn.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"msg": "User not found"}), 404
+        return jsonify({"msg": "User deleted successfully"}), 200
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @users_bp.route('/<int:user_id>/toggle-active', methods=['PUT'])
 @admin_required
 def toggle_user_active_status(user_id):
