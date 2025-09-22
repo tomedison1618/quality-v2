@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS `shipment_checklist_responses` (
     `status` ENUM('Passed', 'NA') NOT NULL,
     `completed_by` VARCHAR(255),
     `completion_date` DATE,
+    `comments` TEXT,
     FOREIGN KEY (`shipment_id`) REFERENCES `shipments`(`id`) ON DELETE CASCADE,
     FOREIGN KEY (`item_id`) REFERENCES `checklist_master_items`(`item_id`) ON DELETE CASCADE,
     UNIQUE KEY `unique_response` (`shipment_id`,`item_id`)

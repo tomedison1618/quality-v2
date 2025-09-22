@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify
 from db import get_db_connection
 import json
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 shipments_bp = Blueprint('shipments', __name__)
 
@@ -390,10 +390,22 @@ def get_manifest_data():
 @shipments_bp.route('/weekly', methods=['GET'])
 def get_weekly_shipments():
     """
-    Fetches all shipments and their units for the current week (Sunday to Saturday).
+    Fetches all shipments and their units for a given week (Sunday to Saturday).
+    Uses the week of the provided 'date' parameter, or the current week if not provided.
     """
-    today = date.today()
-    start_of_week = today - timedelta(days=(today.weekday() + 1) % 7)
+    date_str = request.args.get('date')
+    target_date = None
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': "Invalid date format for 'date'. Use YYYY-MM-DD."}), 400
+    else:
+        target_date = date.today()
+
+    # Calculate the start of the week (Sunday)
+    start_of_week = target_date - timedelta(days=(target_date.weekday() + 1) % 7)
+    # Calculate the end of the week (Saturday)
     end_of_week = start_of_week + timedelta(days=6)
 
     conn = get_db_connection()

@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from werkzeug.security import check_password_hash
 from flask_jwt_extended import create_access_token
+from datetime import timedelta
 from db import get_db_connection
 
 auth_bp = Blueprint('auth', __name__)
@@ -31,7 +32,7 @@ def login():
     if user and check_password_hash(user['password_hash'], password):
         print(f"SUCCESS: User '{username}' authenticated successfully.")
         identity = {"id": user['id'], "username": user['username'], "role": user['role']}
-        access_token = create_access_token(identity=identity)
+        access_token = create_access_token(identity=identity, expires_delta=timedelta(hours=8))
         return jsonify(access_token=access_token)
 
     print(f"ERROR: Authentication failed for user '{username}'.")
