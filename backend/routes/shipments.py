@@ -36,6 +36,7 @@ def get_shipments():
     search_term = request.args.get('search', '')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
+    status = request.args.get('status')
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('limit', 3))
     offset = (page - 1) * per_page
@@ -80,6 +81,10 @@ def get_shipments():
     if end_date:
         where_clauses.append("s.shipping_date <= %s")
         params.append(end_date)
+
+    if status and status in ['In Progress', 'Completed']:
+        where_clauses.append("s.status = %s")
+        params.append(status)
     
     if where_clauses:
         query += " WHERE " + " AND ".join(where_clauses)
@@ -327,31 +332,38 @@ def get_stats_over_time():
 
 @shipments_bp.route('/manifest', methods=['GET'])
 def get_manifest_data():
-    customer_name = request.args.get('customer', '')
+    search_term = request.args.get('search', '')
+    customer_name = request.args.get('customer', '') # This is now redundant if search is used
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    base_query = "SELECT id, job_number, customer_name, shipping_date FROM shipments"
+    base_query = "SELECT DISTINCT s.id, s.job_number, s.customer_name, s.shipping_date FROM shipments s"
     where_clauses = []
     params = []
 
-    if customer_name:
-        where_clauses.append("customer_name LIKE %s")
+    if search_term:
+        base_query += " LEFT JOIN shipped_units su ON s.id = su.shipment_id"
+        where_clauses.append("(s.job_number LIKE %s OR s.customer_name LIKE %s OR su.serial_number LIKE %s OR su.original_serial_number LIKE %s OR su.part_number LIKE %s OR su.model_type LIKE %s)")
+        like_term = f"%{search_term}%"
+        params.extend([like_term] * 6)
+    elif customer_name:
+        where_clauses.append("s.customer_name LIKE %s")
         params.append(f"%{customer_name}%")
+
     if start_date:
-        where_clauses.append("shipping_date >= %s")
+        where_clauses.append("s.shipping_date >= %s")
         params.append(start_date)
     if end_date:
-        where_clauses.append("shipping_date <= %s")
+        where_clauses.append("s.shipping_date <= %s")
         params.append(end_date)
     
     if where_clauses:
         base_query += " WHERE " + " AND ".join(where_clauses)
     
-    base_query += " ORDER BY shipping_date DESC, id DESC"
+    base_query += " ORDER BY s.shipping_date DESC, s.id DESC"
 
     try:
         cursor.execute(base_query, tuple(params))
@@ -359,7 +371,7 @@ def get_manifest_data():
         
         for shipment in shipments:
             cursor.execute(
-                "SELECT model_type, part_number, serial_number FROM shipped_units WHERE shipment_id = %s ORDER BY model_type, part_number", 
+                "SELECT model_type, part_number, serial_number, original_serial_number FROM shipped_units WHERE shipment_id = %s ORDER BY model_type, part_number", 
                 (shipment['id'],)
             )
             # --- THE FIX IS HERE ---
@@ -421,7 +433,7 @@ def get_weekly_shipments():
         # For each shipment, fetch its units and also calculate summaries
         for shipment in shipments:
             cursor.execute(
-                "SELECT model_type, part_number, serial_number FROM shipped_units WHERE shipment_id = %s ORDER BY model_type, part_number", 
+                "SELECT model_type, part_number, serial_number, original_serial_number FROM shipped_units WHERE shipment_id = %s ORDER BY model_type, part_number", 
                 (shipment['id'],)
             )
             units = cursor.fetchall()

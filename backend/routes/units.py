@@ -18,6 +18,9 @@ def add_unit():
     first_test_pass = data.get('first_test_pass', True)
     failed_equipment = data.get('failed_equipment', None) if not first_test_pass else None
     retest_reason = data.get('retest_reason', None) if not first_test_pass else None
+    original_serial_number = data.get('original_serial_number')
+    if original_serial_number == '':
+        original_serial_number = None
 
     if not all([shipment_id, model_type, part_number, serial_number]):
         return jsonify({'error': 'Missing required fields'}), 400
@@ -25,20 +28,23 @@ def add_unit():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        print(f"DEBUG: Inserting unit: shipment_id={shipment_id}, model_type={model_type}, part_number={part_number}, serial_number={serial_number}, first_test_pass={first_test_pass}, failed_equipment={failed_equipment}, retest_reason={retest_reason}")
+        print(f"DEBUG: Inserting unit: shipment_id={shipment_id}, model_type={model_type}, part_number={part_number}, serial_number={serial_number}, original_serial_number={original_serial_number}, first_test_pass={first_test_pass}, failed_equipment={failed_equipment}, retest_reason={retest_reason}")
         cursor.execute(
             """
-            INSERT INTO shipped_units (shipment_id, model_type, part_number, serial_number, first_test_pass, failed_equipment, retest_reason)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO shipped_units (shipment_id, model_type, part_number, serial_number, original_serial_number, first_test_pass, failed_equipment, retest_reason)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (shipment_id, model_type, part_number, serial_number, first_test_pass, failed_equipment, retest_reason)
+            (shipment_id, model_type, part_number, serial_number, original_serial_number, first_test_pass, failed_equipment, retest_reason)
         )
         conn.commit()
         return jsonify({'message': 'Unit added successfully', 'id': cursor.lastrowid}), 201
     except mysql.connector.Error as err:
         print(f"ERROR: MySQL Error: {err}")
         if err.errno == 1062:
-            return jsonify({'error': f"Serial Number '{serial_number}' already exists."}), 409
+            if 'serial_number' in err.msg:
+                return jsonify({'error': f"Serial Number '{serial_number}' already exists."}), 409
+            if 'original_serial_number' in err.msg:
+                return jsonify({'error': f"Original Serial Number '{original_serial_number}' already exists."}), 409
         return jsonify({'error': str(err)}), 500
     finally:
         cursor.close()
@@ -66,18 +72,22 @@ def check_serial():
 @editor_access_required
 def update__unit(unit_id):
     data = request.get_json()
+    original_serial_number = data.get('original_serial_number')
+    if original_serial_number == '':
+        original_serial_number = None
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             """
             UPDATE shipped_units SET
-            model_type = %s, part_number = %s, serial_number = %s,
+            model_type = %s, part_number = %s, serial_number = %s, original_serial_number = %s,
             first_test_pass = %s, failed_equipment = %s, retest_reason = %s
             WHERE unit_id = %s
             """,
             (
-                data['model_type'], data['part_number'], data['serial_number'],
+                data['model_type'], data['part_number'], data['serial_number'], original_serial_number,
                 data['first_test_pass'], data.get('failed_equipment'), data.get('retest_reason'), unit_id
             )
         )

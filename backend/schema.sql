@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS `shipped_units` (
     `model_type` VARCHAR(255) NOT NULL,
     `part_number` VARCHAR(128) NOT NULL,
     `serial_number` VARCHAR(128) NOT NULL UNIQUE,
+    `original_serial_number` VARCHAR(128) UNIQUE,
     `first_test_pass` BOOLEAN DEFAULT TRUE,
     `failed_equipment` ENUM('ATE1', 'ATE2', 'ATE3', 'ATE4', 'ATE5', 'Other'),
     `retest_reason` TEXT,
