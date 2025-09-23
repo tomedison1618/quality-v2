@@ -1,0 +1,132 @@
+.model-management-page {
+    background-color: #fff;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+.add-model-form {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--light-gray);
+}
+
+.add-model-form h3 {
+    margin-top: 0;
+    color: var(--dark-gray);
+}
+
+.add-model-form .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    align-items: center;
+}
+
+.add-model-form .description-input {
+    grid-column: 1 / -1;
+}
+
+.add-model-form .add-button {
+    grid-column: 2 / 3;
+    justify-self: end;
+    width: fit-content;
+}
+
+.model-management-page button {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.add-button {
+    background-color: var(--primary-color);
+}
+.add-button:hover {
+    background-color: #2980b9;
+}
+
+.model-management-page input[type="text"],
+.model-management-page textarea {
+    padding: 0.75rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.model-management-page textarea {
+    resize: vertical;
+}
+
+.models-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.models-table th, .models-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--light-gray);
+    vertical-align: middle;
+}
+
+.models-table th {
+    background-color: #f8f9fa;
+    color: #495057;
+    font-weight: 600;
+}
+
+.status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: white;
+    text-transform: uppercase;
+    display: inline-block;
+}
+.status-badge.active { background-color: var(--secondary-color); }
+.status-badge.inactive { background-color: #7f8c8d; }
+
+.actions {
+    display: flex;
+    gap: 0.5rem;
+}
+.edit-btn { background-color: var(--warning-color); }
+.deactivate-btn, .cancel-btn { background-color: var(--danger-color); }
+.activate-btn, .save-btn { background-color: var(--secondary-color); }
+
+/* --- CSS FIX IS HERE --- */
+.edit-form {
+    display: grid;
+    /* Define 4 columns to match the 4 items in the edit form:
+       Model Type, Part Number, Description, and Actions.
+       This will align the items properly within the row. */
+    grid-template-columns: 1.5fr 1.5fr 2fr auto;
+    gap: 1rem;
+    width: 100%;
+    padding: 0.5rem 0;
+    align-items: center;
+}
+
+.edit-form input,
+.edit-form textarea {
+    border-color: var(--primary-color);
+}
+
+.edit-form .edit-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.error-message {
+    color: var(--danger-color);
+    font-weight: bold;
+}

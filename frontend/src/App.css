@@ -1,0 +1,107 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media print {
+  /* Hide elements you don't want to print */
+  .no-print, nav, button, form, .action-buttons {
+    display: none !important;
+  }
+
+  /* Ensure the main content takes up the full page */
+  body, .container {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    box-shadow: none;
+  }
+}
+
+/* Add to existing App.css or create it */
+:root {
+  --primary-color: #3498db;
+  --secondary-color: #2ecc71;
+  --danger-color: #e74c3c;
+  --warning-color: #f39c12;
+  --light-gray: #ecf0f1;
+  --dark-gray: #34495e;
+  --background-color: #f4f7f6;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--background-color);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 2rem auto;
+  padding: 0 2rem;
+}
+
+/* Print Styles */
+@media print {
+  .no-print, nav, button, form, .action-buttons, input, textarea, select {
+    display: none !important;
+  }
+  body, .container {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    box--shadow: none;
+    background-color: white;
+  }
+  header {
+      display: block !important;
+      text-align: center;
+      background-color: transparent !important;
+      color: black !important;
+      box-shadow: none;
+      border-bottom: 2px solid #ccc;
+      margin-bottom: 1rem;
+  }
+}
+
+.original-serial-input {
+    flex-grow: 2;
+}

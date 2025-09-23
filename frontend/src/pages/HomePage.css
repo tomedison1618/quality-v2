@@ -1,0 +1,152 @@
+.home-page {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.card {
+    background-color: #fff;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    border: 1px solid #eef2f5;
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1.5rem;
+    align-items: stretch;
+}
+
+.stats-card {
+    grid-column: span 2;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stats-card h3 {
+    margin-top: 0;
+    color: #546e7a;
+    font-size: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stats-card p {
+    margin-bottom: 0;
+    font-size: 3rem;
+    font-weight: 300;
+    color: var(--primary-color);
+}
+
+.fpy-card p {
+    color: var(--secondary-color);
+}
+
+.chart-card {
+    grid-column: span 3;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.chart-card h3 {
+    width: 100%;
+    margin-top: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #546e7a;
+}
+
+.chart-container {
+    height: 100%;
+    width: 100%;
+    min-height: 150px; /* Ensure chart has a minimum height */
+}
+
+.chart-card-large {
+    grid-column: 1 / -1;
+}
+
+.no-data-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+.no-data-wrapper h3 { margin: 0; }
+.no-data-msg { color: #7f8c8d; }
+
+/* Styles for other sections are unchanged */
+.create-shipment-form form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    align-items: flex-end;
+}
+.form-group { display: flex; flex-direction: column; }
+.form-group label { margin-bottom: 0.5rem; font-weight: 600; color: #34495e; }
+.form-group input { padding: 0.75rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+
+.primary-button { padding: 0.75rem 1.5rem; border: none; border-radius: 4px; color: white; background-color: var(--primary-color); font-size: 1rem; cursor: pointer; transition: background-color 0.2s; }
+.primary-button:hover { background-color: #2980b9; }
+
+.form-group > .primary-button { 
+    margin-top: auto;
+}
+
+.filter-bar { display: flex; gap: 1rem; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--light-gray); flex-wrap: wrap; }
+.filter-bar input { padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+.filter-bar input[type="text"] { flex-grow: 1; }
+.clear-btn { background-color: var(--danger-color); color: white; border: none; border-radius: 4px; padding: 0.5rem 1rem; cursor: pointer; }
+
+.pagination { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 1.5rem; }
+.pagination button { padding: 0.5rem 1rem; border: 1px solid #ccc; background-color: white; border-radius: 4px; cursor: pointer; }
+.pagination button:disabled { cursor: not-allowed; color: #aaa; }
+.pagination span { font-weight: bold; }
+
+.shipments-list-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+.shipments-list-table th, .shipments-list-table td { padding: 1rem; text-align: left; border-bottom: 1px solid var(--light-gray); }
+.shipments-list-table th { background-color: #f8f9fa; }
+.shipments-list-table td a { color: var(--primary-color); text-decoration: none; font-weight: bold; }
+.shipments-list-table td a:hover { text-decoration: underline; }
+.unit-summary-list { margin: 0; padding-left: 0; list-style: none; }
+
+.status-badge { padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.8rem; font-weight: bold; color: white; text-transform: uppercase; display: inline-block; }
+.status-badge.in-progress { background-color: var(--warning-color); }
+.status-badge.completed { background-color: var(--secondary-color); }
+
+.error-message { color: var(--danger-color); font-weight: bold; }
+
+/* Tab Styles */
+.tabs {
+    display: flex;
+    border-bottom: 1px solid #ccc;
+    margin-bottom: 0; /* Remove margin-bottom to connect with table */
+}
+
+.tab {
+    padding: 10px 20px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-bottom: none;
+    margin-bottom: -1px;
+    background-color: #f8f9fa;
+    color: #546e7a;
+    font-weight: 600;
+}
+
+.tab.active {
+    border-color: #ccc;
+    border-bottom: 1px solid #fff;
+    background-color: #fff;
+    color: var(--primary-color);
+    border-radius: 5px 5px 0 0;
+}

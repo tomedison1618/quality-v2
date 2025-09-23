@@ -1,0 +1,124 @@
+.manifest-page .manifest-controls {
+    margin-bottom: 2rem;
+}
+
+.manifest-page .filter-bar {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.manifest-page .filter-bar input {
+    padding: 0.75rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+.manifest-page .filter-bar input[type="text"]{
+    flex-grow: 1;
+}
+
+.manifest-page .print-button {
+    margin-left: auto; /* Push print button to the right */
+    padding: 0.75rem 1.5rem;
+    background-color: var(--secondary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.manifest-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.manifest-card h3 {
+    margin-top: 0;
+    border-bottom: 1px solid var(--light-gray);
+    padding-bottom: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.manifest-details {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 1rem;
+}
+
+.manifest-unit-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.manifest-unit-table th,
+.manifest-unit-table td {
+    border: 1px solid #ddd;
+    padding: 0.5rem;
+    text-align: left;
+}
+
+.manifest-unit-table th {
+    background-color: #f8f9fa;
+}
+
+/* Print-specific styles */
+@media print {
+    .manifest-card {
+        page-break-inside: avoid; /* Try to keep each card on its own page */
+        box-shadow: none;
+        border: 1px solid #ccc;
+    }
+    .manifest-page {
+        margin: 0;
+        padding: 0;
+    }
+}
+
+.manifest-summary {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid #eef2f5;
+}
+
+.manifest-summary strong {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.summary-list {
+    margin: 0;
+    padding-left: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem; /* Vertical and horizontal gap */
+}
+
+/* Tab Styles */
+.tabs {
+    display: flex;
+    border-bottom: 1px solid #ccc;
+    margin-bottom: 1rem;
+}
+
+.tab {
+    padding: 10px 20px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-bottom: none;
+    margin-bottom: -1px;
+    background-color: #f8f9fa;
+    color: #546e7a;
+    font-weight: 600;
+}
+
+.tab.active {
+    border-color: #ccc;
+    border-bottom: 1px solid #fff;
+    background-color: #fff;
+    color: var(--primary-color);
+    border-radius: 5px 5px 0 0;
+}
