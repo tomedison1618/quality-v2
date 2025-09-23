@@ -55,9 +55,11 @@ const HomePage = () => {
             
             const shipmentListParams = { ...filterParams, page: currentPage, limit: (debouncedSearchTerm || statusFilter === 'In Progress') ? 1000 : 100 };
             
+            const timeSeriesFilterParams = { search: debouncedSearchTerm };
+
             const [statsResponse, timeSeriesResponse, shipmentsResponse] = await Promise.all([
                 getDashboardStats(filterParams),
-                getTimeSeriesStats(filterParams),
+                getTimeSeriesStats(timeSeriesFilterParams), // Use separate params for this chart
                 getShipments(shipmentListParams)
             ]);
             

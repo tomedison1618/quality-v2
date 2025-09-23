@@ -24,7 +24,6 @@ export const getUser = () => {
 
 export const logout = () => {
     localStorage.removeItem('accessToken');
-    window.location.href = '/login';
 };
 
 export const isAdmin = () => {

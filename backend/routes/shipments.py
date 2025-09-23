@@ -187,14 +187,16 @@ def get_dashboard_stats():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
 
-    shipment_id_subquery = "SELECT id FROM shipments"
+    shipment_id_subquery = "SELECT DISTINCT s.id FROM shipments s"
     shipment_where_clauses = []
     shipment_params = []
 
     if search_term:
-        shipment_where_clauses.append("(customer_name LIKE %s OR job_number LIKE %s)")
+        shipment_id_subquery += " LEFT JOIN shipped_units su ON s.id = su.shipment_id"
+        shipment_where_clauses.append("""(s.job_number LIKE %s OR s.customer_name LIKE %s OR su.serial_number LIKE %s
+            OR su.part_number LIKE %s OR su.model_type LIKE %s)""")
         like_term = f"%{search_term}%"
-        shipment_params.extend([like_term, like_term])
+        shipment_params.extend([like_term] * 5)
     if start_date:
         shipment_where_clauses.append("shipping_date >= %s")
         shipment_params.append(start_date)
@@ -278,9 +280,10 @@ def get_stats_over_time():
     params = []
     
     if search_term:
-        where_clauses.append("(s.customer_name LIKE %s OR s.job_number LIKE %s)")
+        where_clauses.append("""(s.job_number LIKE %s OR s.customer_name LIKE %s OR su.serial_number LIKE %s
+            OR su.part_number LIKE %s OR su.model_type LIKE %s)""")
         like_term = f"%{search_term}%"
-        params.extend([like_term, like_term])
+        params.extend([like_term] * 5)
     if start_date:
         where_clauses.append("s.shipping_date >= %s")
         params.append(start_date)
@@ -370,13 +373,33 @@ def get_manifest_data():
         shipments = cursor.fetchall()
         
         for shipment in shipments:
-            cursor.execute(
-                "SELECT model_type, part_number, serial_number, original_serial_number FROM shipped_units WHERE shipment_id = %s ORDER BY model_type, part_number", 
-                (shipment['id'],)
-            )
-            # --- THE FIX IS HERE ---
-            # Assign the fetched units to a local variable first
-            units_list = cursor.fetchall()
+            unit_query = "SELECT model_type, part_number, serial_number, original_serial_number FROM shipped_units WHERE shipment_id = %s"
+            unit_params = [shipment['id']]
+
+            if search_term:
+                like_term = f"%{search_term}%"
+                # First, try to filter units by the search term
+                filtered_unit_query = unit_query + " AND (part_number LIKE %s OR serial_number LIKE %s OR original_serial_number LIKE %s OR model_type LIKE %s) ORDER BY model_type, part_number"
+                cursor.execute(filtered_unit_query, tuple(unit_params + [like_term] * 4))
+                units_list = cursor.fetchall()
+
+                # If no units match, it could be because the search term matched a shipment-level field (job or customer).
+                # In that case, we should show all units for that shipment.
+                if not units_list:
+                    # Check if the shipment itself matched
+                    if (search_term.lower() in str(shipment.get('job_number') or '').lower() or 
+                        search_term.lower() in str(shipment.get('customer_name') or '').lower()):
+                        
+                        # Fetch all units for the shipment
+                        all_units_query = unit_query + " ORDER BY model_type, part_number"
+                        cursor.execute(all_units_query, tuple(unit_params))
+                        units_list = cursor.fetchall()
+            else:
+                # No search term, so fetch all units
+                all_units_query = unit_query + " ORDER BY model_type, part_number"
+                cursor.execute(all_units_query, tuple(unit_params))
+                units_list = cursor.fetchall()
+
             shipment['units'] = units_list
             
             # Now, use the correct local variable 'units_list' for calculations

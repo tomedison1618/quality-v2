@@ -1,14 +1,20 @@
 import React from 'react';
-import { NavLink, Link } from 'react-router-dom';
+import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import './Header.css';
 
 const Header = () => {
     const { user, logout } = useAuth();
+    const navigate = useNavigate();
 
     if (!user) {
         return null;
     }
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
 
     const canUserEdit = user.role === 'admin' || user.role === 'user';
     const isUserAdmin = user.role === 'admin';
@@ -40,7 +46,7 @@ const Header = () => {
                 <div className="user-info">
                     <span>Welcome, {user.username}</span>
                     <NavLink to="/change-password">Change Password</NavLink>
-                    <button onClick={logout} className="logout-button">Logout</button>
+                    <button onClick={handleLogout} className="logout-button">Logout</button>
                 </div>
             </div>
         </header>
