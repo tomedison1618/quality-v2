@@ -1,6 +1,4 @@
 @echo off
-echo Starting XAMPP Server...
-echo start "" "C:\xampp\xampp-control.exe"
 
 echo Waiting for WAMP to initialize...
 echo timeout /t 10 /nobreak > NUL
