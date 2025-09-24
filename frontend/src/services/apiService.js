@@ -28,8 +28,10 @@ api.interceptors.response.use(
         if (error.response && (error.response.status === 401 || error.response.status === 422)) {
             console.error("Auth error. Token may be invalid or expired. Logging out.");
             localStorage.removeItem('accessToken');
-            // We don't use the context's logout here to avoid circular dependencies
-            window.location.href = '/login';
+            // Avoid full page reload; navigate via hash for SPA routing
+            if (window && window.location) {
+                window.location.hash = '#/login';
+            }
         }
         return Promise.reject(error);
     }
