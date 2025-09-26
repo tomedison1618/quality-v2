@@ -68,6 +68,7 @@ export const deleteShipment = (id) => api.delete(`/shipments/${id}`);
 export const getModels = () => api.get('/models');
 export const addModel = (modelData) => api.post('/models', modelData);
 export const updateModel = (id, modelData) => api.put(`/models/${id}`, modelData);
+export const checkPartNumber = (partNumber) => api.get('/models/check_part_number', { params: { part_number: partNumber } });
 
 // Shipped Units API calls
 export const addUnit = (unitData) => api.post('/units', unitData);

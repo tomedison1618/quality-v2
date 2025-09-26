@@ -81,3 +81,24 @@ def update_model(model_id):
 
 # Note: A DELETE route would follow the same pattern as UPDATE.
 # For now, we are using the is_active toggle which is handled by the UPDATE route.
+
+@models_bp.route('/check_part_number', methods=['GET'])
+def check_part_number():
+    part_number = request.args.get('part_number')
+    if not part_number:
+        return jsonify({'error': 'Part number is required'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT part_number FROM model_numbers WHERE part_number = %s", (part_number,))
+        model = cursor.fetchone()
+        if model:
+            return jsonify({'exists': True}), 200
+        else:
+            return jsonify({'exists': False}), 200
+    except conn.connector.Error as err:
+        return jsonify({'error': str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()

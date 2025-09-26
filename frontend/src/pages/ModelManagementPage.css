@@ -130,3 +130,14 @@
     color: var(--danger-color);
     font-weight: bold;
 }
+
+.part-number-input-container {
+    position: relative;
+}
+
+.part-number-input-container .error-message {
+    position: absolute;
+    bottom: -2.5rem;
+    left: 0;
+    font-size: 0.8rem;
+}

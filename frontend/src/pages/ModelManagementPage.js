@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getModels, addModel, updateModel } from '../services/apiService';
+import { getModels, addModel, updateModel, checkPartNumber } from '../services/apiService';
+import useDebounce from '../hooks/useDebounce';
 import './ModelManagementPage.css';
 
 const ModelManagementPage = () => {
@@ -14,6 +15,9 @@ const ModelManagementPage = () => {
     const [editModelType, setEditModelType] = useState('');
     const [editPartNumber, setEditPartNumber] = useState('');
     const [editDescription, setEditDescription] = useState('');
+    const [partNumberError, setPartNumberError] = useState('');
+
+    const debouncedPartNumber = useDebounce(newPartNumber, 500);
 
     const fetchModels = useCallback(async () => {
         try {
@@ -33,10 +37,33 @@ const ModelManagementPage = () => {
         fetchModels();
     }, [fetchModels]);
 
+    useEffect(() => {
+        const check = async () => {
+            if (debouncedPartNumber) {
+                try {
+                    const res = await checkPartNumber(debouncedPartNumber);
+                    if (res.data.exists) {
+                        setPartNumberError('This part number already exists.');
+                    } else {
+                        setPartNumberError('');
+                    }
+                } catch (err) {
+                    console.error('Failed to check part number', err);
+                    setPartNumberError(''); // Clear error if check fails
+                }
+            }
+        };
+        check();
+    }, [debouncedPartNumber]);
+
     const handleAddSubmit = async (e) => {
         e.preventDefault();
         if (!newModelType || !newPartNumber) {
             alert('Please fill in both Model Type and Part Number.');
+            return;
+        }
+        if (partNumberError) {
+            alert(partNumberError);
             return;
         }
         try {
@@ -102,9 +129,12 @@ const ModelManagementPage = () => {
                 <h3>Add New Model</h3>
                 <div className="form-grid">
                     <input type="text" placeholder="Model Type (e.g., X-Mic, LNB)" value={newModelType} onChange={(e) => setNewModelType(e.target.value)} required />
-                    <input type="text" placeholder="Part Number (e.g., LNB-123)" value={newPartNumber} onChange={(e) => setNewPartNumber(e.target.value)} required />
+                    <div className="part-number-input-container">
+                        <input type="text" placeholder="Part Number (e.g., LNB-123)" value={newPartNumber} onChange={(e) => setNewPartNumber(e.target.value)} required />
+                        {partNumberError && <p className="error-message">{partNumberError}</p>}
+                    </div>
                     <textarea placeholder="Description (optional)" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} rows="3" className="description-input"></textarea>
-                    <button type="submit" className="add-button">Add Model</button>
+                    <button type="submit" className="add-button" disabled={!!partNumberError}>Add Model</button>
                 </div>
             </form>
 
