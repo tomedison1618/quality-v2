@@ -74,6 +74,29 @@ const ManifestPage = () => {
 
     const groupedShipments = useMemo(() => groupShipmentsByWeek(shipments), [shipments]);
 
+    // Weekly summary of totals by product type for the active week
+    const weeklySummary = useMemo(() => {
+        if (!activeWeekKey || !groupedShipments[activeWeekKey]) return [];
+        const totals = {};
+        const weekShipments = groupedShipments[activeWeekKey];
+
+        weekShipments.forEach(shipment => {
+            if (Array.isArray(shipment.shipped_units_summary) && shipment.shipped_units_summary.length) {
+                shipment.shipped_units_summary.forEach(item => {
+                    const key = item.model_type || 'Unknown';
+                    totals[key] = (totals[key] || 0) + (item.count || 0);
+                });
+            } else if (Array.isArray(shipment.units) && shipment.units.length) {
+                shipment.units.forEach(unit => {
+                    const key = unit.model_type || 'Unknown';
+                    totals[key] = (totals[key] || 0) + 1;
+                });
+            }
+        });
+
+        return Object.entries(totals).map(([model_type, count]) => ({ model_type, count }));
+    }, [activeWeekKey, groupedShipments]);
+
     useEffect(() => {
         const weekKeys = Object.keys(groupedShipments);
         if (weekKeys.length > 0) {
@@ -167,14 +190,28 @@ const ManifestPage = () => {
                         </div>
 
                         {activeWeekKey && groupedShipments[activeWeekKey] ? (
-                            groupedShipments[activeWeekKey].map(shipment => (
-                                <div key={shipment.id} className="manifest-card card">
-                                    <h3>Manifest for Job: {shipment.job_number}</h3>
-                                    <div className="manifest-details">
-                                        <span><strong>Customer:</strong> {shipment.customer_name}</span>
-                                        <span><strong>Shipping Date:</strong> {shipment.shipping_date}</span>
-                                        <span><strong>Total Units:</strong> {shipment.total_units}</span>
-                                    </div>
+                            <>
+                                <div className="manifest-summary card">
+                                    <strong>Weekly Summary by Type:</strong>
+                                    {weeklySummary.length > 0 ? (
+                                        <ul className="summary-list">
+                                            {weeklySummary.map((summary, index) => (
+                                                <li key={index}>{summary.model_type} ({summary.count})</li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <span>No units in this week.</span>
+                                    )}
+                                </div>
+
+                                {groupedShipments[activeWeekKey].map(shipment => (
+                                    <div key={shipment.id} className="manifest-card card">
+                                        <h3>Manifest for Job: {shipment.job_number}</h3>
+                                        <div className="manifest-details">
+                                            <span><strong>Customer:</strong> {shipment.customer_name}</span>
+                                            <span><strong>Shipping Date:</strong> {shipment.shipping_date}</span>
+                                            <span><strong>Total Units:</strong> {shipment.total_units}</span>
+                                        </div>
 
                                     <div className="manifest-summary">
                                         <strong>Summary by Type:</strong>
@@ -214,7 +251,8 @@ const ManifestPage = () => {
                                         </tbody>
                                     </table>
                                 </div>
-                            ))
+                                ))}
+                            </>
                         ) : (
                             !isLoading && <p>No shipments found for the selected filters.</p>
                         )}
