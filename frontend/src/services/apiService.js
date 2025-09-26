@@ -62,6 +62,7 @@ export const updateShipmentStatus = (id, status) => api.put(`/shipments/${id}/st
 export const getDashboardStats = (params) => api.get('/shipments/stats', { params });
 export const getTimeSeriesStats = (params) => api.get('/shipments/stats/over-time', { params });
 export const getManifestData = (params) => api.get('shipments/manifest', { params });
+export const deleteShipment = (id) => api.delete(`/shipments/${id}`);
 
 // Model Management API calls
 export const getModels = () => api.get('/models');

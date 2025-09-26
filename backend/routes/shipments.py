@@ -4,6 +4,7 @@ from db import get_db_connection
 import json
 from collections import Counter
 from datetime import date, timedelta, datetime
+from routes.auth_decorators import admin_required
 
 shipments_bp = Blueprint('shipments', __name__)
 
@@ -38,14 +39,12 @@ def get_shipments():
     end_date = request.args.get('end_date')
     status = request.args.get('status')
     page = int(request.args.get('page', 1))
-    per_page = int(request.args.get('limit', 3))
+    per_page = int(request.args.get('limit', 10))
     offset = (page - 1) * per_page
 
-    # --- THE SQL QUERY FIX IS HERE ---
     query = """
     SELECT
         s.id, s.job_number, s.customer_name, s.shipping_date, s.status,
-        -- Replace the subquery with a direct, robust COUNT(DISTINCT ...)
         COUNT(DISTINCT su_search.unit_id) AS total_units,
         (
             SELECT CONCAT(
@@ -70,11 +69,11 @@ def get_shipments():
     params = []
     if search_term:
         where_clauses.append("""
-            (s.job_number LIKE %s OR s.customer_name LIKE %s OR su_search.serial_number LIKE %s
+            (s.job_number LIKE %s OR s.customer_name LIKE %s OR su_search.serial_number LIKE %s OR su_search.original_serial_number LIKE %s
             OR su_search.part_number LIKE %s OR su_search.model_type LIKE %s)
         """)
         like_term = f"%{search_term}%"
-        params.extend([like_term] * 5)
+        params.extend([like_term] * 6)
     if start_date:
         where_clauses.append("s.shipping_date >= %s")
         params.append(start_date)
@@ -86,6 +85,8 @@ def get_shipments():
         where_clauses.append("s.status = %s")
         params.append(status)
     
+    count_query_params = list(params)
+
     if where_clauses:
         query += " WHERE " + " AND ".join(where_clauses)
 
@@ -95,13 +96,11 @@ def get_shipments():
     cursor = conn.cursor(dictionary=True)
 
     count_cursor = conn.cursor()
-    count_query_params = []
     count_query = "SELECT COUNT(DISTINCT s.id) FROM shipments s"
     if search_term:
         count_query += " LEFT JOIN shipped_units su_search ON s.id = su_search.shipment_id"
     if where_clauses:
         count_query += " WHERE " + " AND ".join(where_clauses)
-        count_query_params = params
     
     count_cursor.execute(count_query, tuple(count_query_params))
     total_records = count_cursor.fetchone()[0]
@@ -180,6 +179,33 @@ def update_shipment_status(shipment_id):
     conn.close()
     return jsonify({'message': f'Shipment status updated to {new_status}'})
 
+@shipments_bp.route('/<int:shipment_id>', methods=['DELETE'])
+@admin_required
+def delete_shipment(shipment_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # First, delete related records from shipped_units
+        cursor.execute("DELETE FROM shipped_units WHERE shipment_id = %s", (shipment_id,))
+        
+        # Second, delete related records from shipment_checklist_responses
+        cursor.execute("DELETE FROM shipment_checklist_responses WHERE shipment_id = %s", (shipment_id,))
+        
+        # Now, delete the shipment itself
+        cursor.execute("DELETE FROM shipments WHERE id = %s", (shipment_id,))
+        
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return jsonify({'error': 'Shipment not found or already deleted'}), 404
+            
+        return jsonify({'message': 'Shipment and all related data successfully deleted'}), 200
+    except mysql.connector.Error as err:
+        conn.rollback() # Rollback in case of an error
+        return jsonify({'error': str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 @shipments_bp.route('/stats', methods=['GET'])
 def get_dashboard_stats():

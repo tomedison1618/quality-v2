@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { getShipmentDetails, updateShipmentStatus } from '../services/apiService';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { getShipmentDetails, updateShipmentStatus, deleteShipment } from '../services/apiService';
 import { useAuth } from '../contexts/AuthContext';
 import ChecklistTable from '../components/checklist/ChecklistTable';
 import ShippedUnitsSection from '../components/units/ShippedUnitsSection';
@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 
 const ChecklistDetailPage = () => {
     const { id } = useParams();
+    const navigate = useNavigate();
     const { user } = useAuth(); // Get the logged-in user from our context
     const [shipment, setShipment] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -48,7 +49,7 @@ const ChecklistDetailPage = () => {
             return;
         }
 
-        if (!window.confirm(`Are you sure you want to mark this checklist as "${newStatus}"?`)) {
+        if (!window.confirm(`Are you sure you want to mark this checklist as \"${newStatus}\"?`)) {
             return;
         }
         try {
@@ -57,6 +58,23 @@ const ChecklistDetailPage = () => {
             fetchShipmentDetails(); // Refresh data to show new status and lock/unlock page
         } catch (err) {
             toast.error('Failed to update status.');
+        }
+    };
+
+    const handleDelete = async () => {
+        if (user?.role !== 'admin') {
+            toast.error("You are not authorized to delete this checklist.");
+            return;
+        }
+        if (window.confirm('Are you sure you want to permanently delete this checklist?')) {
+            try {
+                await deleteShipment(id);
+                toast.success('Checklist successfully deleted.');
+                navigate('/'); // Navigate back to the dashboard/home page
+            } catch (err) {
+                toast.error('Failed to delete checklist.');
+                console.error(err);
+            }
         }
     };
 
@@ -106,6 +124,9 @@ const ChecklistDetailPage = () => {
                         </button>
                     )}
                     <button onClick={handlePrint} className="print-button">Print</button>
+                    {user?.role === 'admin' && (
+                        <button onClick={handleDelete} className="delete-button">Delete</button>
+                    )}
                 </div>
             )}
             
