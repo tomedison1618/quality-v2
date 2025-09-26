@@ -1,0 +1,85 @@
+.weekly-reports-container {
+  padding: 16px;
+}
+
+.weekly-reports-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.weekly-reports-header h2 {
+  margin: 0;
+}
+
+.weekly-reports-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.weekly-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+  /* Constrain width and add edge padding for better viewing */
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.weekly-summary-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.chart-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/* Make the chart half of the viewport width and centered */
+.chart-section.half-width {
+  width: 50vw;
+  margin: 0 auto;
+}
+
+.chart-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+  min-height: 70vh;
+}
+
+.chart-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.chart-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-card h3 {
+  margin-top: 0;
+}
+
+.stacked-hint {
+  font-size: 12px;
+  color: #666;
+}
+/* Removed full-bleed page layout in favor of half-width chart */

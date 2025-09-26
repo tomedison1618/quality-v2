@@ -30,10 +30,11 @@ const Header = () => {
             
             <div className="header-right-section">
                 <nav>
-                    
-                    
+                
+                
                     <NavLink to="/manifest" className={({ isActive }) => isActive ? 'active-link' : ''}>Manifest</NavLink>
-                    
+                    <NavLink to="/weekly-reports" className={({ isActive }) => isActive ? 'active-link' : ''}>Weekly Reports</NavLink>
+                
                     {canUserEdit && (
                         <NavLink to="/manage-models" className={({ isActive }) => isActive ? 'active-link' : ''}>Manage Models</NavLink>
                     )}
