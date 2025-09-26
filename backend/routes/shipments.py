@@ -74,12 +74,15 @@ def get_shipments():
         """)
         like_term = f"%{search_term}%"
         params.extend([like_term] * 6)
-    if start_date:
-        where_clauses.append("s.shipping_date >= %s")
-        params.append(start_date)
-    if end_date:
-        where_clauses.append("s.shipping_date <= %s")
-        params.append(end_date)
+    # Apply date filters only when no explicit search term is provided.
+    # This ensures text search spans all dates (consistent with Manifest page behavior).
+    if not search_term:
+        if start_date:
+            where_clauses.append("s.shipping_date >= %s")
+            params.append(start_date)
+        if end_date:
+            where_clauses.append("s.shipping_date <= %s")
+            params.append(end_date)
 
     if status and status in ['In Progress', 'Completed']:
         where_clauses.append("s.status = %s")
