@@ -402,7 +402,11 @@ def get_manifest_data():
         shipments = cursor.fetchall()
         
         for shipment in shipments:
-            unit_query = "SELECT model_type, part_number, serial_number, original_serial_number FROM shipped_units WHERE shipment_id = %s"
+            unit_query = (
+                "SELECT model_type, part_number, serial_number, original_serial_number, "
+                "first_test_pass, failed_equipment, retest_reason "
+                "FROM shipped_units WHERE shipment_id = %s"
+            )
             unit_params = [shipment['id']]
 
             if search_term:

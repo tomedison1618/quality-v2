@@ -52,7 +52,7 @@
   margin: 0 auto;
 }
 
-.chart-card {
+.weekly-reports-container .chart-card {
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   padding: 12px;
@@ -74,7 +74,7 @@
   gap: 8px;
 }
 
-.chart-card h3 {
+.weekly-reports-container .chart-card h3 {
   margin-top: 0;
 }
 

@@ -156,6 +156,9 @@ const ManifestPage = () => {
                                         <th>Part Number</th>
                                         <th>Original S/N</th>
                                         <th>Serial Number</th>
+                                        <th>1st Pass</th>
+                                        <th>Failed Equipment</th>
+                                        <th>Retest Reason</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -166,10 +169,13 @@ const ManifestPage = () => {
                                                 <td>{unit.part_number}</td>
                                                 <td>{unit.original_serial_number || 'N/A'}</td>
                                                 <td>{unit.serial_number}</td>
+                                                <td>{unit.first_test_pass ? 'Yes' : 'No'}</td>
+                                                <td>{unit.failed_equipment || '-'}</td>
+                                                <td>{unit.retest_reason || '-'}</td>
                                             </tr>
                                         ))
                                     ) : (
-                                        <tr><td colSpan="4">No units in this shipment.</td></tr>
+                                        <tr><td colSpan="7">No units in this shipment.</td></tr>
                                     )}
                                 </tbody>
                             </table>
@@ -233,6 +239,9 @@ const ManifestPage = () => {
                                                 <th>Part Number</th>
                                                 <th>Original S/N</th>
                                                 <th>Serial Number</th>
+                                                <th>1st Pass</th>
+                                                <th>Failed Equipment</th>
+                                                <th>Retest Reason</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -243,10 +252,13 @@ const ManifestPage = () => {
                                                         <td>{unit.part_number}</td>
                                                         <td>{unit.original_serial_number || 'N/A'}</td>
                                                         <td>{unit.serial_number}</td>
+                                                        <td>{unit.first_test_pass ? 'Yes' : 'No'}</td>
+                                                        <td>{unit.failed_equipment || '-'}</td>
+                                                        <td>{unit.retest_reason || '-'}</td>
                                                     </tr>
                                                 ))
                                             ) : (
-                                                <tr><td colSpan="4">No units in this shipment.</td></tr>
+                                                <tr><td colSpan="7">No units in this shipment.</td></tr>
                                             )}
                                         </tbody>
                                     </table>

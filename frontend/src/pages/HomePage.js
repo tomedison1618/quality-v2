@@ -86,20 +86,25 @@ const HomePage = () => {
     }, [debouncedSearchTerm, startDate, endDate, statusFilter]);
 
     const groupShipmentsByWeek = useCallback((shipmentList) => {
+        const formatLocal = (dateObj) => {
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        };
+
         const weeks = {};
         shipmentList.forEach(shipment => {
             const shippingDate = new Date(shipment.shipping_date);
-            // Calculate the start of the week (Sunday) for the shipping date
+            // Calculate the start of the week (Sunday) for the shipping date (local time)
             const dayOfWeek = shippingDate.getDay(); // Sunday is 0, Monday is 1, etc.
-            const startOfWeek = new Date(shippingDate);
-            startOfWeek.setDate(shippingDate.getDate() - dayOfWeek);
-            startOfWeek.setHours(0, 0, 0, 0); // Normalize to start of day
+            const startOfWeek = new Date(shippingDate.getFullYear(), shippingDate.getMonth(), shippingDate.getDate() - dayOfWeek);
+            startOfWeek.setHours(0, 0, 0, 0);
 
-            const endOfWeek = new Date(startOfWeek);
-            endOfWeek.setDate(startOfWeek.getDate() + 6);
-            endOfWeek.setHours(23, 59, 59, 999); // Normalize to end of day
+            const endOfWeek = new Date(startOfWeek.getFullYear(), startOfWeek.getMonth(), startOfWeek.getDate() + 6);
+            endOfWeek.setHours(23, 59, 59, 999);
 
-            const weekKey = `${startOfWeek.toISOString().split('T')[0]} - ${endOfWeek.toISOString().split('T')[0]}`;
+            const weekKey = `${formatLocal(startOfWeek)} - ${formatLocal(endOfWeek)}`;
 
             if (!weeks[weekKey]) {
                 weeks[weekKey] = [];
@@ -107,12 +112,23 @@ const HomePage = () => {
             weeks[weekKey].push(shipment);
         });
 
-        // Sort weeks by their start date (key)
-        const sortedWeekKeys = Object.keys(weeks).sort((a, b) => {
-            const dateA = new Date(a.split(' ')[0]);
-            const dateB = new Date(b.split(' ')[0]);
-            return dateB - dateA; // Newest week first
-        });
+        // Ensure the current week is present even if there are no shipments yet
+        const todayLocal = new Date();
+        const dow = todayLocal.getDay();
+        const currentStart = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate() - dow);
+        const currentEnd = new Date(currentStart.getFullYear(), currentStart.getMonth(), currentStart.getDate() + 6);
+        const currentWeekKey = `${formatLocal(currentStart)} - ${formatLocal(currentEnd)}`;
+        if (!weeks[currentWeekKey]) {
+            weeks[currentWeekKey] = [];
+        }
+
+        const parseKey = (key) => {
+            const [y, m, d] = key.split(' ')[0].split('-').map(Number);
+            return new Date(y, m - 1, d);
+        };
+
+        // Sort weeks by their start date (newest first)
+        const sortedWeekKeys = Object.keys(weeks).sort((a, b) => parseKey(b) - parseKey(a));
 
         const grouped = {};
         sortedWeekKeys.forEach(key => {
@@ -125,16 +141,22 @@ const HomePage = () => {
 
     useEffect(() => {
         const weekKeys = Object.keys(groupedShipments);
-        if (weekKeys.length > 0) {
-            // If the active week is not in the new list of weeks, default to the first one.
-            // This handles the case where a search/filter changes the available weeks.
-            if (!weekKeys.includes(activeWeekKey)) {
-                setActiveWeekKey(weekKeys[0]);
-            }
-        } else {
-            // If no shipments are found, clear the active week.
+        if (weekKeys.length === 0) {
             setActiveWeekKey('');
+            return;
         }
+
+        // Only set a default when none is selected or the current selection disappeared
+        if (!activeWeekKey || !weekKeys.includes(activeWeekKey)) {
+            const todayLocal = new Date();
+            const dow = todayLocal.getDay();
+            const start = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate() - dow);
+            const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+            const formatLocal = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+            const currentWeekKey = `${formatLocal(start)} - ${formatLocal(end)}`;
+            setActiveWeekKey(weekKeys.includes(currentWeekKey) ? currentWeekKey : weekKeys[0]);
+        }
+        // If there is a valid selection, do nothing so user choice sticks
     }, [groupedShipments, activeWeekKey]);
 
     const handleCreateShipment = async (e) => {
@@ -190,14 +212,10 @@ const HomePage = () => {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-            legend: {
-                position: 'right',
-                labels: {
-                    boxWidth: 20,
-                    padding: 15,
-                }
-            }
-        }
+            legend: { display: false } // custom legend rendered in DOM for consistent sizing
+        },
+        layout: { padding: 0 },
+        cutout: '65%'
     };
 
     const timeSeriesChartOptions = {
@@ -357,11 +375,13 @@ const HomePage = () => {
                                     )}
                                 </tbody>
                             </table>
-                            <div className="pagination">
-                                <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}>Previous</button>
-                                <span>Page {currentPage} of {totalPages}</span>
-                                <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages || totalPages === 0}>Next</button>
-                            </div>
+                            {totalPages > 1 && !(debouncedSearchTerm || statusFilter === 'In Progress') && (
+                                <div className="pagination">
+                                    <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}>Previous</button>
+                                    <span>Page {currentPage} of {totalPages}</span>
+                                    <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages || totalPages === 0}>Next</button>
+                                </div>
+                            )}
                         </>
                     )}
                 </>)}
@@ -381,11 +401,21 @@ const HomePage = () => {
                     <p>{stats?.first_pass_yield ?? '...'}%</p>
                 </div>
 
-                <div className="card chart-card">
+                <div className="card chart-card donut-card">
                     <h3>Retest Reasons</h3>
                     {stats && stats.retest_reasons && stats.retest_reasons.length > 0 ? (
-                        <div className="chart-container">
-                            <Doughnut data={doughnutChartData} options={doughnutChartOptions} />
+                        <div className="donut-stack">
+                            <div className="chart-container">
+                                <Doughnut data={doughnutChartData} options={doughnutChartOptions} />
+                            </div>
+                            <ul className="donut-legend">
+                                {doughnutChartData.labels.map((label, idx) => (
+                                    <li key={idx}>
+                                        <span className="legend-swatch" style={{ backgroundColor: doughnutChartData.datasets[0].backgroundColor[idx] }} />
+                                        <span className="legend-label">{label}</span>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     ) : (
                         <div className="no-data-wrapper">
@@ -394,11 +424,21 @@ const HomePage = () => {
                     )}
                 </div>
 
-                <div className="card chart-card">
+                <div className="card chart-card donut-card">
                     <h3>Failed Equipment</h3>
                     {stats && stats.failed_equipment_stats && stats.failed_equipment_stats.length > 0 ? (
-                        <div className="chart-container">
-                            <Doughnut data={failedEquipmentChartData} options={doughnutChartOptions} />
+                        <div className="donut-stack">
+                            <div className="chart-container">
+                                <Doughnut data={failedEquipmentChartData} options={doughnutChartOptions} />
+                            </div>
+                            <ul className="donut-legend">
+                                {failedEquipmentChartData.labels.map((label, idx) => (
+                                    <li key={idx}>
+                                        <span className="legend-swatch" style={{ backgroundColor: failedEquipmentChartData.datasets[0].backgroundColor[idx] }} />
+                                        <span className="legend-label">{label}</span>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     ) : (
                         <div className="no-data-wrapper">

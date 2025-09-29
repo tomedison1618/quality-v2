@@ -57,10 +57,17 @@
     border: 1px solid #ddd;
     padding: 0.5rem;
     text-align: left;
+    vertical-align: top;
 }
 
 .manifest-unit-table th {
     background-color: #f8f9fa;
+}
+
+/* Allow long reasons to wrap nicely without stretching rows excessively */
+.manifest-unit-table td:nth-child(7) {
+    white-space: normal;
+    max-width: 320px;
 }
 
 /* Print-specific styles */

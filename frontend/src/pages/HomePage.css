@@ -15,8 +15,10 @@
 .dashboard-grid {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
-    gap: 1.5rem;
-    align-items: stretch;
+    column-gap: 1.5rem;
+    row-gap: 0.25rem; /* minimal vertical spacing between rows */
+    align-items: start;
+    grid-auto-rows: min-content; /* keep each row only as tall as its content */
 }
 
 .stats-card {
@@ -65,9 +67,39 @@
 }
 
 .chart-container {
-    height: 100%;
+    height: 300px; /* default container height */
     width: 100%;
-    min-height: 150px; /* Ensure chart has a minimum height */
+}
+
+/* Only shrink the two top donut charts */
+.donut-card { padding: 1rem 1rem 1.25rem; align-self: start; height: fit-content; }
+/* Square, responsive holder so height always matches width; caps size */
+.donut-card .chart-container {
+    width: 100%;
+    max-width: 320px; /* cap size so it doesn't stretch vertically */
+    aspect-ratio: 1 / 1; /* keep perfectly square */
+    height: auto;
+    line-height: 0;
+    margin: 0 auto;
+    overflow: hidden;
+}
+
+/* Stack chart above a consistent-size legend */
+.donut-stack { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; }
+.donut-legend { list-style: none; padding: 0; margin: 0 0 0.5rem; display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 6px 12px; font-size: 12px; color: #556; }
+.donut-legend li { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.legend-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.legend-label { line-height: 1; }
+.donut-card .chart-container, .donut-card .chart-container * { margin-bottom: 0; }
+/* Remove baseline gap under canvas to eliminate extra space */
+.donut-card canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.donut-card h3 {
+    margin-bottom: 0.5rem;
 }
 
 .chart-card-large {
