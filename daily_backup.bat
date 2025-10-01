@@ -4,12 +4,21 @@ REM Daily MySQL Backup Script
 REM ============================================================================
 
 REM --- IMPORTANT: Please update this path to your mysqldump.exe ---
-SET MYSQL_DUMP_PATH="C:\wamp64\bin\mysql\mysql8.0.33\bin\mysqldump.exe"
+
+SET MYSQL_DUMP_DIR="C:\wamp64\bin\mysql\mysql9.1.0\bin\"
+SET MYSQL_DUMP_PATH=%MYSQL_DUMP_DIR%\mysqldump.exe
+
+REM --- Check if mysqldump.exe exists ---
+if not exist %MYSQL_DUMP_PATH% (
+    echo ERROR: mysqldump.exe not found at the specified path:
+    echo %MYSQL_DUMP_PATH%
+    echo Please update the MYSQL_DUMP_PATH variable in this script.
+    goto :eof
+)
 
 REM --- Database Credentials (from your .env file) ---
-SET DB_USER=factory_user
-SET DB_PASS=password
-SET DB_NAME=quality
+REM Load environment variables from backend/.env
+for /f "usebackq delims=" %%a in ("backend\.env") do set %%a
 
 REM --- Backup Configuration ---
 SET BACKUP_DIR="N:\_Tom\quality backup\db"
@@ -27,7 +36,9 @@ echo Running daily backup for database: '%DB_NAME%'
 echo.
 
 REM --- Run the mysqldump command ---
-%MYSQL_DUMP_PATH% -u %DB_USER% -p%DB_PASS% %DB_NAME% > %BACKUP_FILE%
+pushd %MYSQL_DUMP_DIR%
+mysqldump.exe -u %DB_USER% -p%DB_PASSWORD% %DB_NAME% > %BACKUP_FILE% 2> %BACKUP_FILE%.log
+popd
 
 echo Backup file created successfully:
 echo %BACKUP_FILE%
