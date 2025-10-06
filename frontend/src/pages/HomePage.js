@@ -38,20 +38,12 @@ const HomePage = () => {
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const today = new Date();
-            const fourWeeksAgo = new Date(today.setDate(today.getDate() - 28));
-            const formattedFourWeeksAgo = fourWeeksAgo.toISOString().split('T')[0];
-            const formattedToday = new Date().toISOString().split('T')[0];
-
             const filterParams = {
                 search: debouncedSearchTerm,
                 status: statusFilter === 'All' ? '' : statusFilter,
+                start_date: startDate,
+                end_date: endDate,
             };
-
-            if (statusFilter !== 'In Progress') {
-                filterParams.start_date = startDate || formattedFourWeeksAgo;
-                filterParams.end_date = endDate || formattedToday;
-            }
             
             const shipmentListParams = { ...filterParams, page: currentPage, limit: (debouncedSearchTerm || statusFilter === 'In Progress') ? 1000 : 100 };
             
@@ -287,8 +279,8 @@ const HomePage = () => {
                 <h2>Existing Shipments</h2>
                 <div className="filter-bar">
                     <input type="text" placeholder="Search customer, job, S/N..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} disabled={statusFilter === 'In Progress'} />
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} disabled={statusFilter === 'In Progress'} />
+                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
                     <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                         <option value="All">All Statuses</option>
                         <option value="In Progress">In Progress</option>
