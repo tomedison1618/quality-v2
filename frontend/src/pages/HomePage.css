@@ -160,8 +160,40 @@
 /* Tab Styles */
 .tabs {
     display: flex;
+    align-items: center;
+    gap: 8px;
     border-bottom: 1px solid #ccc;
     margin-bottom: 0; /* Remove margin-bottom to connect with table */
+}
+
+.tab-list {
+    display: flex;
+    overflow: hidden;
+    flex: 1;
+    gap: 4px;
+}
+
+.tab-list .tab {
+    flex-shrink: 0;
+}
+
+.tab-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    height: 100%;
+    border: none;
+    background: transparent;
+    color: #546e7a;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.tab-nav:disabled {
+    color: #cfd8dc;
+    cursor: default;
 }
 
 .tab {
