@@ -220,11 +220,12 @@ def get_dashboard_stats():
     shipment_where_clauses = []
     shipment_params = []
 
+    like_term = None
     if search_term:
+        like_term = f"%{search_term}%"
         shipment_id_subquery += " LEFT JOIN shipped_units su ON s.id = su.shipment_id"
         shipment_where_clauses.append("""(s.job_number LIKE %s OR s.customer_name LIKE %s OR su.serial_number LIKE %s
             OR su.part_number LIKE %s OR su.model_type LIKE %s)""")
-        like_term = f"%{search_term}%"
         shipment_params.extend([like_term] * 5)
     if start_date:
         shipment_where_clauses.append("shipping_date >= %s")
@@ -245,14 +246,118 @@ def get_dashboard_stats():
     unit_query = f"""
         SELECT 
             COUNT(unit_id) as total_units,
-            (SUM(CASE WHEN first_test_pass = TRUE THEN 1 ELSE 0 END) / NULLIF(COUNT(unit_id), 0)) * 100 as fpy
+            SUM(CASE WHEN first_test_pass = TRUE THEN 1 ELSE 0 END) as total_first_pass
         FROM shipped_units 
         WHERE shipment_id IN ({shipment_id_subquery})
     """
     cursor.execute(unit_query, tuple(shipment_params))
-    unit_stats = cursor.fetchone()
-    total_units = unit_stats['total_units'] or 0
-    fpy = unit_stats['fpy'] or 0
+    unit_stats = cursor.fetchone() or {}
+    total_units = unit_stats.get('total_units') or 0
+    total_first_pass = unit_stats.get('total_first_pass') or 0
+
+    fpy = (total_first_pass / total_units) * 100 if total_units else 0
+
+    if search_term and like_term:
+        filter_dimension = None
+        filter_value = None
+
+        # Prefer an exact part number match if it uniquely identifies a product.
+        part_exact_query = f"""
+            SELECT DISTINCT part_number
+            FROM shipped_units
+            WHERE shipment_id IN ({shipment_id_subquery}) AND LOWER(part_number) = LOWER(%s)
+        """
+        part_exact_params = shipment_params.copy()
+        part_exact_params.append(search_term)
+        cursor.execute(part_exact_query, tuple(part_exact_params))
+        part_exact_matches = [row['part_number'] for row in cursor.fetchall()]
+
+        if part_exact_matches:
+            unique_matches = {pn.lower(): pn for pn in part_exact_matches}
+            if len(unique_matches) == 1:
+                filter_dimension = 'part_number'
+                filter_value = next(iter(unique_matches.values()))
+
+        if not filter_dimension:
+            part_like_query = f"""
+                SELECT DISTINCT part_number
+                FROM shipped_units
+                WHERE shipment_id IN ({shipment_id_subquery})
+                AND part_number LIKE %s
+            """
+            part_like_params = shipment_params.copy()
+            part_like_params.append(like_term)
+            cursor.execute(part_like_query, tuple(part_like_params))
+            part_like_matches = [row['part_number'] for row in cursor.fetchall()]
+
+            if part_like_matches:
+                lowered = [pn.lower() for pn in part_like_matches]
+                if search_term.lower() in lowered:
+                    filter_dimension = 'part_number'
+                    filter_value = part_like_matches[lowered.index(search_term.lower())]
+                elif len(set(lowered)) == 1:
+                    filter_dimension = 'part_number'
+                    filter_value = part_like_matches[0]
+                elif len(part_like_matches) == 1:
+                    filter_dimension = 'part_number'
+                    filter_value = part_like_matches[0]
+
+        if not filter_dimension:
+            # Fall back to model_type matching when part number doesn't uniquely identify a product.
+            exact_type_query = f"""
+                SELECT DISTINCT model_type 
+                FROM shipped_units 
+                WHERE shipment_id IN ({shipment_id_subquery}) AND LOWER(model_type) = LOWER(%s)
+            """
+            exact_type_params = shipment_params.copy()
+            exact_type_params.append(search_term)
+            cursor.execute(exact_type_query, tuple(exact_type_params))
+            exact_matches = [row['model_type'] for row in cursor.fetchall()]
+
+            if len(exact_matches) == 1:
+                filter_dimension = 'model_type'
+                filter_value = exact_matches[0]
+            else:
+                like_type_query = f"""
+                    SELECT DISTINCT model_type 
+                    FROM shipped_units 
+                    WHERE shipment_id IN ({shipment_id_subquery}) 
+                    AND (model_type LIKE %s OR part_number LIKE %s)
+                """
+                like_type_params = shipment_params.copy()
+                like_type_params.extend([like_term, like_term])
+                cursor.execute(like_type_query, tuple(like_type_params))
+                like_matches = [row['model_type'] for row in cursor.fetchall()]
+
+                if like_matches:
+                    lowered_matches = [mt.lower() for mt in like_matches]
+                    if search_term.lower() in lowered_matches:
+                        filter_dimension = 'model_type'
+                        filter_value = like_matches[lowered_matches.index(search_term.lower())]
+                    elif len(set(lowered_matches)) == 1:
+                        filter_dimension = 'model_type'
+                        filter_value = like_matches[0]
+                    elif len(like_matches) == 1:
+                        filter_dimension = 'model_type'
+                        filter_value = like_matches[0]
+
+        if filter_dimension and filter_value:
+            filtered_query = f"""
+                SELECT 
+                    COUNT(unit_id) as filtered_units,
+                    SUM(CASE WHEN first_test_pass = TRUE THEN 1 ELSE 0 END) as filtered_first_pass
+                FROM shipped_units 
+                WHERE shipment_id IN ({shipment_id_subquery}) AND {filter_dimension} = %s
+            """
+            filtered_params = shipment_params.copy()
+            filtered_params.append(filter_value)
+            cursor.execute(filtered_query, tuple(filtered_params))
+            filtered_stats = cursor.fetchone() or {}
+            filtered_units = filtered_stats.get('filtered_units') or 0
+            filtered_first_pass = filtered_stats.get('filtered_first_pass') or 0
+
+            if filtered_units:
+                fpy = (filtered_first_pass / filtered_units) * 100
 
     retest_fetch_query = f"""
         SELECT retest_reason FROM shipped_units
