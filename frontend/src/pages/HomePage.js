@@ -530,6 +530,9 @@ const HomePage = () => {
                     )}
                 </div>
             </div>
+            <footer className="app-footer">
+                <small>© Copyright {new Date().getFullYear()} Nhu Toan Nguyen. All rights reserved.</small>
+            </footer>
         </div>
     );
 };

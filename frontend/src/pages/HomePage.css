@@ -4,6 +4,13 @@
     gap: 2rem;
 }
 
+.app-footer {
+    margin-top: 2rem;
+    text-align: center;
+    font-size: 0.85rem;
+    color: #78909c;
+}
+
 .card {
     background-color: #fff;
     padding: 2rem;

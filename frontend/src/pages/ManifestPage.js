@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getManifestData } from '../services/apiService';
 import './ManifestPage.css';
 
+const VISIBLE_WEEK_COUNT = 6;
+
 const ManifestPage = () => {
     const [shipments, setShipments] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -11,6 +13,7 @@ const ManifestPage = () => {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [activeWeekKey, setActiveWeekKey] = useState('');
+    const [weekWindowStart, setWeekWindowStart] = useState(0);
 
     const fetchManifestData = useCallback(async () => {
         setIsLoading(true);
@@ -73,6 +76,7 @@ const ManifestPage = () => {
     };
 
     const groupedShipments = useMemo(() => groupShipmentsByWeek(shipments), [shipments]);
+    const weekKeys = useMemo(() => Object.keys(groupedShipments), [groupedShipments]);
 
     // Weekly summary of totals by product type for the active week
     const weeklySummary = useMemo(() => {
@@ -98,15 +102,62 @@ const ManifestPage = () => {
     }, [activeWeekKey, groupedShipments]);
 
     useEffect(() => {
-        const weekKeys = Object.keys(groupedShipments);
-        if (weekKeys.length > 0) {
-            if (!weekKeys.includes(activeWeekKey)) {
-                setActiveWeekKey(weekKeys[0]);
-            }
-        } else {
+        if (weekKeys.length === 0) {
             setActiveWeekKey('');
+            setWeekWindowStart(0);
+            return;
         }
-    }, [groupedShipments, activeWeekKey]);
+
+        if (!activeWeekKey || !weekKeys.includes(activeWeekKey)) {
+            setActiveWeekKey(weekKeys[0]);
+            setWeekWindowStart(0);
+        }
+    }, [weekKeys, activeWeekKey]);
+
+    useEffect(() => {
+        if (weekKeys.length === 0) {
+            return;
+        }
+        setWeekWindowStart(prevStart => {
+            const maxStart = Math.max(0, weekKeys.length - VISIBLE_WEEK_COUNT);
+            return Math.min(prevStart, maxStart);
+        });
+    }, [weekKeys]);
+
+    useEffect(() => {
+        if (!activeWeekKey) {
+            return;
+        }
+        const activeIndex = weekKeys.indexOf(activeWeekKey);
+        if (activeIndex === -1) {
+            return;
+        }
+        setWeekWindowStart(prevStart => {
+            if (activeIndex < prevStart) {
+                return activeIndex;
+            }
+            const windowEnd = prevStart + VISIBLE_WEEK_COUNT;
+            if (activeIndex >= windowEnd) {
+                return activeIndex - VISIBLE_WEEK_COUNT + 1;
+            }
+            return prevStart;
+        });
+    }, [activeWeekKey, weekKeys]);
+
+    const visibleWeekKeys = weekKeys.slice(weekWindowStart, weekWindowStart + VISIBLE_WEEK_COUNT);
+    const canGoPrevWeek = weekWindowStart > 0;
+    const canGoNextWeek = weekWindowStart + VISIBLE_WEEK_COUNT < weekKeys.length;
+    const showWeekNavigation = weekKeys.length > VISIBLE_WEEK_COUNT;
+
+    const handlePrevWeeks = () => {
+        if (!canGoPrevWeek) return;
+        setWeekWindowStart(prevStart => Math.max(0, prevStart - VISIBLE_WEEK_COUNT));
+    };
+
+    const handleNextWeeks = () => {
+        if (!canGoNextWeek) return;
+        setWeekWindowStart(prevStart => Math.min(Math.max(0, weekKeys.length - VISIBLE_WEEK_COUNT), prevStart + VISIBLE_WEEK_COUNT));
+    };
 
     const handlePrint = () => { window.print(); };
 
@@ -184,15 +235,39 @@ const ManifestPage = () => {
                 ) : (
                     <>
                         <div className="tabs no-print">
-                            {Object.keys(groupedShipments).map(weekKey => (
-                                <div
-                                    key={weekKey}
-                                    className={`tab ${activeWeekKey === weekKey ? 'active' : ''}`}
-                                    onClick={() => setActiveWeekKey(weekKey)}
+                            {showWeekNavigation && (
+                                <button
+                                    type="button"
+                                    className="tab-nav"
+                                    onClick={handlePrevWeeks}
+                                    disabled={!canGoPrevWeek}
+                                    aria-label="Previous weeks"
                                 >
-                                    Week of {weekKey.split(' ')[0]}
-                                </div>
-                            ))}
+                                    &lt;
+                                </button>
+                            )}
+                            <div className="tab-list">
+                                {visibleWeekKeys.map(weekKey => (
+                                    <div
+                                        key={weekKey}
+                                        className={`tab ${activeWeekKey === weekKey ? 'active' : ''}`}
+                                        onClick={() => setActiveWeekKey(weekKey)}
+                                    >
+                                        Week of {weekKey.split(' ')[0]}
+                                    </div>
+                                ))}
+                            </div>
+                            {showWeekNavigation && (
+                                <button
+                                    type="button"
+                                    className="tab-nav"
+                                    onClick={handleNextWeeks}
+                                    disabled={!canGoNextWeek}
+                                    aria-label="Next weeks"
+                                >
+                                    &gt;
+                                </button>
+                            )}
                         </div>
 
                         {activeWeekKey && groupedShipments[activeWeekKey] ? (
