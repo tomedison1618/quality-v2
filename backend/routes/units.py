@@ -1,4 +1,4 @@
-import mysql.connector
+from psycopg import errors
 from flask import Blueprint, request, jsonify
 from db import get_db_connection
 # --- IMPORT FROM THE NEW DECORATORS FILE ---
@@ -26,6 +26,8 @@ def add_unit():
         return jsonify({'error': 'Missing required fields'}), 400
 
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
     cursor = conn.cursor()
     try:
         print(f"DEBUG: Inserting unit: shipment_id={shipment_id}, model_type={model_type}, part_number={part_number}, serial_number={serial_number}, original_serial_number={original_serial_number}, first_test_pass={first_test_pass}, failed_equipment={failed_equipment}, retest_reason={retest_reason}")
@@ -33,18 +35,23 @@ def add_unit():
             """
             INSERT INTO shipped_units (shipment_id, model_type, part_number, serial_number, original_serial_number, first_test_pass, failed_equipment, retest_reason)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING unit_id
             """,
             (shipment_id, model_type, part_number, serial_number, original_serial_number, first_test_pass, failed_equipment, retest_reason)
         )
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        return jsonify({'message': 'Unit added successfully', 'id': cursor.lastrowid}), 201
-    except mysql.connector.Error as err:
-        print(f"ERROR: MySQL Error: {err}")
-        if err.errno == 1062:
-            if 'serial_number' in err.msg:
-                return jsonify({'error': f"Serial Number '{serial_number}' already exists."}), 409
-            if 'original_serial_number' in err.msg:
-                return jsonify({'error': f"Original Serial Number '{original_serial_number}' already exists."}), 409
+        return jsonify({'message': 'Unit added successfully', 'id': new_id}), 201
+    except errors.UniqueViolation as err:
+        conn.rollback()
+        constraint = (getattr(err.diag, "constraint_name", "") or "").lower()
+        if 'serial_number' in constraint:
+            return jsonify({'error': f"Serial Number '{serial_number}' already exists."}), 409
+        if 'original_serial_number' in constraint:
+            return jsonify({'error': f"Original Serial Number '{original_serial_number}' already exists."}), 409
+        return jsonify({'error': 'Unique constraint violated'}), 409
+    except Exception as err:
+        conn.rollback()
         return jsonify({'error': str(err)}), 500
     finally:
         cursor.close()
@@ -59,11 +66,15 @@ def check_serial():
         return jsonify({'error': 'Serial number is required'}), 400
 
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
     cursor = conn.cursor()
-    cursor.execute("SELECT unit_id FROM shipped_units WHERE serial_number = %s", (serial_number,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    try:
+        cursor.execute("SELECT unit_id FROM shipped_units WHERE serial_number = %s", (serial_number,))
+        result = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
 
     is_unique = result is None
     return jsonify({'is_unique': is_unique})
@@ -77,6 +88,8 @@ def update__unit(unit_id):
         original_serial_number = None
 
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -95,9 +108,16 @@ def update__unit(unit_id):
         if cursor.rowcount == 0:
             return jsonify({'error': 'Unit not found'}), 404
         return jsonify({'message': 'Unit updated successfully'}), 200
-    except mysql.connector.Error as err:
-        if err.errno == 1062:
+    except errors.UniqueViolation as err:
+        conn.rollback()
+        constraint = (getattr(err.diag, "constraint_name", "") or "").lower()
+        if 'serial_number' in constraint:
             return jsonify({'error': f"Serial Number '{data['serial_number']}' already exists."}), 409
+        if 'original_serial_number' in constraint:
+            return jsonify({'error': f"Original Serial Number '{original_serial_number}' already exists."}), 409
+        return jsonify({'error': 'Unique constraint violated'}), 409
+    except Exception as err:
+        conn.rollback()
         return jsonify({'error': str(err)}), 500
     finally:
         cursor.close()
@@ -107,6 +127,8 @@ def update__unit(unit_id):
 @editor_access_required
 def delete_unit(unit_id):
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM shipped_units WHERE unit_id = %s", (unit_id,))
@@ -115,6 +137,7 @@ def delete_unit(unit_id):
             return jsonify({'error': 'Unit not found'}), 404
         return jsonify({'message': 'Unit deleted successfully'}), 200
     except Exception as e:
+        conn.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
         cursor.close()

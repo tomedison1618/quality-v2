@@ -11,29 +11,37 @@ Before you begin, ensure the following software is installed on the server PC:
 - **Git:** For cloning the application repository. ([Download Git](https://git-scm.com/))
 - **Python 3.10+:** For running the backend. ([Download Python](https://www.python.org/))
 - **Node.js and npm:** For building the frontend. ([Download Node.js](https://nodejs.org/))
-- **MySQL Server:** The database for the application. ([Download MySQL](https://dev.mysql.com/downloads/installer/))
+- **PostgreSQL 15+:** The database for the application. ([Download PostgreSQL](https://www.postgresql.org/download/windows/))
 
 ---
 
 ## Step 1: Database Setup
 
-1.  **Create Database and User:**
-    -   Log in to your MySQL server.
-    -   Create a new database. The recommended name is `quality`.
-    -   Create a new user (e.g., `factory_user`) and grant it all privileges on the `quality` database.
+1.  **Create Database and Role:**
+    -   Open **pgAdmin** or a `psql` shell on the server.
+    -   Create a new database (recommended name: `quality`):
+        ```sql
+        CREATE DATABASE quality;
+        ```
+    -   (Optional) Create an application role with a password and grant it privileges:
+        ```sql
+        CREATE ROLE quality_user WITH LOGIN PASSWORD 'your_secure_password';
+        GRANT ALL PRIVILEGES ON DATABASE quality TO quality_user;
+        ```
+        You can also reuse the default `postgres` superuser if preferred.
 
 2.  **Run Initialization Scripts:**
-    -   Open a command prompt or terminal.
+    -   Open a command prompt.
     -   Navigate to the root of the project directory.
-    -   Run the schema creation script to set up the tables:
+    -   Apply the schema to the `quality` database:
         ```sh
-        mysql -u YOUR_USERNAME -p quality < backend\schema.sql
+        psql -h localhost -U YOUR_USERNAME -d quality -f backend\schema.sql
         ```
-        *(Replace `YOUR_USERNAME` with the user you created. You will be prompted for the password.)*
+        *(Replace `YOUR_USERNAME` with the PostgreSQL role you will use. You will be prompted for the password.)*
 
-    -   (Optional) Run the seed script to add sample data:
+    -   (Optional) Load any seed/sample data:
         ```sh
-        mysql -u YOUR_USERNAME -p quality < seed.sql
+        psql -h localhost -U YOUR_USERNAME -d quality -f seed.sql
         ```
 
 ---
@@ -58,7 +66,8 @@ Before you begin, ensure the following software is installed on the server PC:
     ```env
     # Database Connection
     DB_HOST=localhost
-    DB_USER=factory_user
+    DB_PORT=5432
+    DB_USER=quality_user
     DB_PASSWORD=your_database_password
     DB_NAME=quality
 
@@ -66,6 +75,7 @@ Before you begin, ensure the following software is installed on the server PC:
     JWT_SECRET_KEY=generate_a_long_random_string_here
     CLIENT_ORIGIN_URL=http://YOUR_SERVER_IP:5000
     ```
+    *If you prefer using the default PostgreSQL superuser, set `DB_USER=postgres` and use its password.*
     *Replace `YOUR_SERVER_IP` with the actual IP address of the PC running the server.*
 
 4.  **Create Admin User:**

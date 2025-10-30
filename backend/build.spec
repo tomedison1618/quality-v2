@@ -23,7 +23,7 @@ a = Analysis(
         ('schema.sql', '.'),
         ('.env', '.')
     ],
-    hiddenimports=['mysql.connector.locales.eng'],
+    hiddenimports=['psycopg'],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],

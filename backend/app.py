@@ -1,13 +1,13 @@
 import os
 import sys
-import mysql.connector
-from mysql.connector import errorcode
+import psycopg
+from psycopg import errors, sql
 from flask import Flask, send_from_directory, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash
-from db import get_db_connection
+from db import get_db_connection, get_dict_cursor
 
 # Import Blueprints
 from routes.shipments import shipments_bp
@@ -51,41 +51,67 @@ app.register_blueprint(users_bp, url_prefix='/api/users')
 
 @app.cli.command("db-init")
 def db_init_command():
-    print("Attempting to connect to MySQL server to create database...")
+    db_name = os.getenv('DB_NAME')
+    db_host = os.getenv('DB_HOST')
+    db_port = int(os.getenv('DB_PORT', '5432'))
+    db_user = os.getenv('DB_USER')
+    db_password = os.getenv('DB_PASSWORD')
+
+    print("Ensuring PostgreSQL database exists...")
     try:
-        conn = mysql.connector.connect(
-            host=os.getenv('DB_HOST'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD')
+        admin_conn = psycopg.connect(
+            host=db_host,
+            port=db_port,
+            user=db_user,
+            password=db_password,
+            dbname="postgres"
         )
-        cursor = conn.cursor()
-        db_name = os.getenv('DB_NAME')
-        print(f"Creating database '{db_name}' if it does not exist...")
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {db_name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
-        conn.close()
-        print("Database check/creation complete.")
-    except mysql.connector.Error as err:
-        print(f"Failed to connect or create database: {err}")
+        admin_conn.autocommit = True
+        with admin_conn.cursor() as admin_cursor:
+            admin_cursor.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s",
+                (db_name,)
+            )
+            if admin_cursor.fetchone():
+                print(f"Database '{db_name}' already exists.")
+            else:
+                print(f"Creating database '{db_name}'...")
+                admin_cursor.execute(
+                    sql.SQL('CREATE DATABASE {}').format(
+                        sql.Identifier(db_name)
+                    )
+                )
+                print("Database created successfully.")
+    except Exception as err:
+        print(f"Failed to ensure database exists: {err}")
         return
+    finally:
+        if 'admin_conn' in locals() and admin_conn and not admin_conn.closed:
+            admin_conn.close()
 
     print("Connecting to the application database to run schema...")
     conn = get_db_connection()
-    cursor = conn.cursor()
+    if conn is None:
+        print("Unable to connect to application database.")
+        return
     schema_path = os.path.join(BASE_PATH, 'schema.sql')
     print(f"Reading schema from: {schema_path}")
     try:
+        cursor = conn.cursor()
         with open(schema_path, 'r') as f:
-            for result in cursor.execute(f.read(), multi=True):
-                pass
+            schema_sql = f.read()
+        cursor.execute(schema_sql)
         conn.commit()
         print("Database tables initialized successfully.")
     except FileNotFoundError:
         print(f"ERROR: schema.sql not found at {schema_path}")
     except Exception as e:
+        conn.rollback()
         print(f"An error occurred while running the schema: {e}")
     finally:
-        if 'conn' in locals() and conn.is_connected():
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if conn and not conn.closed:
             conn.close()
 
 @app.cli.command("create-admin")
@@ -105,25 +131,27 @@ def create_admin_command():
 
     password_hash = generate_password_hash(password)
     print(f"Attempting to create admin user '{username}'...")
+    conn = get_db_connection()
+    if conn is None:
+        print("Unable to connect to the database.")
+        return
+    cursor = conn.cursor()
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, 'admin')",
             (username, password_hash)
         )
         conn.commit()
         print(f"Admin user '{username}' created successfully.")
-    except mysql.connector.Error as err:
-        if err.errno == 1062:
-            print(f"Admin user '{username}' already exists.")
-        else:
-            print(f"Error creating admin: {err}")
+    except errors.UniqueViolation:
+        conn.rollback()
+        print(f"Admin user '{username}' already exists.")
     except Exception as e:
+        conn.rollback()
         print(f"An unexpected error occurred: {e}")
     finally:
-        if 'conn' in locals() and conn.is_connected():
-            cursor.close()
+        cursor.close()
+        if conn and not conn.closed:
             conn.close()
 
 @app.route('/', defaults={'path': ''})
@@ -153,8 +181,11 @@ def reset_password_command():
 
     password_hash = generate_password_hash(new_password)
     
+    conn = get_db_connection()
+    if conn is None:
+        print("Unable to connect to the database.")
+        return
     try:
-        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Check if user exists first
@@ -172,9 +203,11 @@ def reset_password_command():
         conn.commit()
         print(f"Password for user '{username}' has been reset successfully.")
     except Exception as e:
+        conn.rollback()
         print(f"An error occurred: {e}")
     finally:
-        if 'conn' in locals() and conn.is_connected():
+        if 'cursor' in locals():
             cursor.close()
+        if 'conn' in locals() and conn and not conn.closed:
             conn.close()
 

@@ -1,8 +1,8 @@
-import mysql.connector
+from psycopg import errors
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from db import get_db_connection
+from db import get_db_connection, get_dict_cursor
 # Import the decorator from our new shared file
 from routes.auth_decorators import admin_required
 
@@ -13,7 +13,9 @@ users_bp = Blueprint('users', __name__)
 @admin_required
 def get_users():
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
+    cursor = get_dict_cursor(conn)
     # Exclude the password_hash from the response for security
     cursor.execute("SELECT id, username, role, is_active, created_at FROM users")
     users = cursor.fetchall()
@@ -43,6 +45,8 @@ def create_user():
     
     password_hash = generate_password_hash(password)
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -51,9 +55,11 @@ def create_user():
         )
         conn.commit()
         return jsonify({"msg": "User created successfully"}), 201
-    except mysql.connector.Error as err:
-        if err.errno == 1062: # Duplicate entry
-            return jsonify({"error": f"Username '{username}' already exists."}), 409
+    except errors.UniqueViolation:
+        conn.rollback()
+        return jsonify({"error": f"Username '{username}' already exists."}), 409
+    except Exception as err:
+        conn.rollback()
         return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()
@@ -74,6 +80,8 @@ def update_user(user_id):
         return jsonify({"msg": "Invalid role specified. Must be 'admin', 'user', 'viewer', or 'QC'."}), 400
 
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE users SET username = %s, role = %s WHERE id = %s", (username, role, user_id))
@@ -81,9 +89,11 @@ def update_user(user_id):
         if cursor.rowcount == 0:
             return jsonify({"msg": "User not found"}), 404
         return jsonify({"msg": "User updated successfully"}), 200
-    except mysql.connector.Error as err:
-        if err.errno == 1062: # Duplicate entry
-            return jsonify({"error": f"Username '{username}' already exists."}), 409
+    except errors.UniqueViolation:
+        conn.rollback()
+        return jsonify({"error": f"Username '{username}' already exists."}), 409
+    except Exception as err:
+        conn.rollback()
         return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()
@@ -94,6 +104,8 @@ def update_user(user_id):
 @admin_required
 def delete_user(user_id):
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
@@ -101,7 +113,8 @@ def delete_user(user_id):
         if cursor.rowcount == 0:
             return jsonify({"msg": "User not found"}), 404
         return jsonify({"msg": "User deleted successfully"}), 200
-    except mysql.connector.Error as err:
+    except Exception as err:
+        conn.rollback()
         return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()
@@ -112,11 +125,18 @@ def delete_user(user_id):
 @admin_required
 def toggle_user_active_status(user_id):
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET is_active = NOT is_active WHERE id = %s", (user_id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        cursor.execute("UPDATE users SET is_active = NOT is_active WHERE id = %s", (user_id,))
+        conn.commit()
+    except Exception as err:
+        conn.rollback()
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
     return jsonify({"msg": "User status updated."})
 
 @users_bp.route('/<int:user_id>/password', methods=['PUT'])
@@ -130,6 +150,8 @@ def admin_reset_password(user_id):
 
     password_hash = generate_password_hash(new_password)
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
@@ -137,7 +159,8 @@ def admin_reset_password(user_id):
         if cursor.rowcount == 0:
             return jsonify({"msg": "User not found"}), 404
         return jsonify({"msg": "Password updated successfully"}), 200
-    except mysql.connector.Error as err:
+    except Exception as err:
+        conn.rollback()
         return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()
@@ -156,12 +179,15 @@ def change_password():
 
     password_hash = generate_password_hash(new_password)
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
         conn.commit()
         return jsonify({"msg": "Password updated successfully"}), 200
-    except mysql.connector.Error as err:
+    except Exception as err:
+        conn.rollback()
         return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()

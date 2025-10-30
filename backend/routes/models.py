@@ -1,5 +1,6 @@
+from psycopg import errors
 from flask import Blueprint, request, jsonify
-from db import get_db_connection
+from db import get_db_connection, get_dict_cursor
 
 models_bp = Blueprint('models', __name__)
 
@@ -17,17 +18,22 @@ def add_model():
         return jsonify({'error': 'Model Type and Part Number are required.'}), 400
 
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO model_numbers (model_type, description, part_number) VALUES (%s, %s, %s)",
+            "INSERT INTO model_numbers (model_type, description, part_number) VALUES (%s, %s, %s) RETURNING model_id",
             (model_type, description, part_number)
         )
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        return jsonify({'message': 'Model added successfully', 'id': cursor.lastrowid}), 201
-    except conn.connector.Error as err:
-        if err.errno == 1062: # Duplicate entry for part_number
-            return jsonify({'error': f"Part Number '{part_number}' already exists."}), 409
+        return jsonify({'message': 'Model added successfully', 'id': new_id}), 201
+    except errors.UniqueViolation:
+        conn.rollback()
+        return jsonify({'error': f"Part Number '{part_number}' already exists."}), 409
+    except Exception as err:
+        conn.rollback()
         return jsonify({'error': str(err)}), 500
     finally:
         cursor.close()
@@ -40,7 +46,9 @@ def add_model():
 @models_bp.route('/', methods=['GET'])
 def get_models():
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
+    cursor = get_dict_cursor(conn)
     
     # Select all fields, including the new description
     cursor.execute("SELECT model_id, model_type, description, part_number, is_active FROM model_numbers ORDER BY model_type, part_number")
@@ -61,6 +69,8 @@ def get_models():
 def update_model(model_id):
     data = request.get_json()
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -71,9 +81,11 @@ def update_model(model_id):
         if cursor.rowcount == 0:
             return jsonify({'error': 'Model not found'}), 404
         return jsonify({'message': 'Model updated successfully'}), 200
-    except conn.connector.Error as err:
-        if err.errno == 1062: # Duplicate entry for part_number
-            return jsonify({'error': f"Part Number '{data['part_number']}' already exists."}), 409
+    except errors.UniqueViolation:
+        conn.rollback()
+        return jsonify({'error': f"Part Number '{data['part_number']}' already exists."}), 409
+    except Exception as err:
+        conn.rollback()
         return jsonify({'error': str(err)}), 500
     finally:
         cursor.close()
@@ -89,7 +101,9 @@ def check_part_number():
         return jsonify({'error': 'Part number is required'}), 400
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
+    cursor = get_dict_cursor(conn)
     try:
         cursor.execute("SELECT part_number FROM model_numbers WHERE part_number = %s", (part_number,))
         model = cursor.fetchone()
@@ -97,7 +111,7 @@ def check_part_number():
             return jsonify({'exists': True}), 200
         else:
             return jsonify({'exists': False}), 200
-    except conn.connector.Error as err:
+    except Exception as err:
         return jsonify({'error': str(err)}), 500
     finally:
         cursor.close()

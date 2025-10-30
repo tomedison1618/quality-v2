@@ -1,6 +1,6 @@
-import mysql.connector
+from psycopg import errors
 from flask import Blueprint, request, jsonify
-from db import get_db_connection
+from db import get_db_connection, get_dict_cursor
 import json
 from collections import Counter
 from datetime import date, timedelta, datetime
@@ -13,18 +13,22 @@ shipments_bp = Blueprint('shipments', __name__)
 def add_shipment():
     data = request.get_json()
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO shipments (customer_name, job_number, shipping_date, qc_name) VALUES (%s, %s, %s, %s)",
+            "INSERT INTO shipments (customer_name, job_number, shipping_date, qc_name) VALUES (%s, %s, %s, %s) RETURNING id",
             (data['customer_name'], data['job_number'], data['shipping_date'], data['qc_name'])
         )
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        new_id = cursor.lastrowid
         return jsonify({'message': 'Shipment created successfully', 'id': new_id}), 201
-    except mysql.connector.Error as err:
-        if err.errno == 1062:
-             return jsonify({'error': f"A shipment with Job Number '{data['job_number']}' for date '{data['shipping_date']}' already exists."}), 409
+    except errors.UniqueViolation:
+        conn.rollback()
+        return jsonify({'error': f"A shipment with Job Number '{data['job_number']}' for date '{data['shipping_date']}' already exists."}), 409
+    except Exception as err:
+        conn.rollback()
         return jsonify({'error': str(err)}), 500
     finally:
         cursor.close()
@@ -44,23 +48,24 @@ def get_shipments():
 
     query = """
     SELECT
-        s.id, s.job_number, s.customer_name, s.shipping_date, s.status,
+        s.id,
+        s.job_number,
+        s.customer_name,
+        s.shipping_date,
+        s.status,
         COUNT(DISTINCT su_search.unit_id) AS total_units,
-        (
-            SELECT CONCAT(
-                '[',
-                IFNULL(GROUP_CONCAT(
-                    JSON_OBJECT('model_type', su.model_type, 'count', su.unit_count)
-                ), ''),
-                ']'
-            )
-            FROM (
-                SELECT model_type, COUNT(unit_id) as unit_count
-                FROM shipped_units
-                WHERE shipment_id = s.id
-                GROUP BY model_type
-            ) as su
-        ) as shipped_units_summary
+        COALESCE(
+            (
+                SELECT json_agg(json_build_object('model_type', su.model_type, 'count', su.unit_count))
+                FROM (
+                    SELECT model_type, COUNT(unit_id) AS unit_count
+                    FROM shipped_units
+                    WHERE shipment_id = s.id
+                    GROUP BY model_type
+                ) su
+            ),
+            '[]'::json
+        ) AS shipped_units_summary
     FROM shipments s
     LEFT JOIN shipped_units su_search ON s.id = su_search.shipment_id
     """
@@ -69,8 +74,8 @@ def get_shipments():
     params = []
     if search_term:
         where_clauses.append("""
-            (s.job_number LIKE %s OR s.customer_name LIKE %s OR su_search.serial_number LIKE %s OR su_search.original_serial_number LIKE %s
-            OR su_search.part_number LIKE %s OR su_search.model_type LIKE %s)
+            (s.job_number ILIKE %s OR s.customer_name ILIKE %s OR su_search.serial_number ILIKE %s OR su_search.original_serial_number ILIKE %s
+            OR su_search.part_number ILIKE %s OR su_search.model_type ILIKE %s)
         """)
         like_term = f"%{search_term}%"
         params.extend([like_term] * 6)
@@ -96,30 +101,49 @@ def get_shipments():
     query += " GROUP BY s.id ORDER BY s.shipping_date DESC, s.id DESC"
     
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
 
-    count_cursor = conn.cursor()
-    count_query = "SELECT COUNT(DISTINCT s.id) FROM shipments s"
-    if search_term:
-        count_query += " LEFT JOIN shipped_units su_search ON s.id = su_search.shipment_id"
-    if where_clauses:
-        count_query += " WHERE " + " AND ".join(where_clauses)
-    
-    count_cursor.execute(count_query, tuple(count_query_params))
-    total_records = count_cursor.fetchone()[0]
-    count_cursor.close()
+    cursor = None
+    count_cursor = None
+    shipments = []
+    total_records = 0
+    try:
+        cursor = get_dict_cursor(conn)
+        count_cursor = conn.cursor()
+        count_query = "SELECT COUNT(DISTINCT s.id) FROM shipments s"
+        if search_term:
+            count_query += " LEFT JOIN shipped_units su_search ON s.id = su_search.shipment_id"
+        if where_clauses:
+            count_query += " WHERE " + " AND ".join(where_clauses)
 
-    query += " LIMIT %s OFFSET %s"
-    params.extend([per_page, offset])
+        count_cursor.execute(count_query, tuple(count_query_params))
+        count_result = count_cursor.fetchone()
+        if count_result:
+            total_records = count_result[0] or 0
 
-    cursor.execute(query, tuple(params))
-    shipments = cursor.fetchall()
-    cursor.close()
-    conn.close()
+        query += " LIMIT %s OFFSET %s"
+        params.extend([per_page, offset])
+
+        cursor.execute(query, tuple(params))
+        shipments = cursor.fetchall()
+    except Exception as err:
+        return jsonify({'error': str(err)}), 500
+    finally:
+        if count_cursor:
+            count_cursor.close()
+        if cursor:
+            cursor.close()
+        conn.close()
 
     for shipment in shipments:
-        shipment['shipping_date'] = shipment['shipping_date'].isoformat()
-        shipment['shipped_units_summary'] = json.loads(shipment['shipped_units_summary'])
+        if shipment.get('shipping_date'):
+            shipment['shipping_date'] = shipment['shipping_date'].isoformat()
+        summary = shipment.get('shipped_units_summary') or []
+        if isinstance(summary, str):
+            shipment['shipped_units_summary'] = json.loads(summary)
+        else:
+            shipment['shipped_units_summary'] = summary
 
     return jsonify({
         'shipments': shipments,
@@ -131,40 +155,49 @@ def get_shipments():
 @shipments_bp.route('/<int:shipment_id>', methods=['GET'])
 def get_shipment_details(shipment_id):
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    
-    cursor.execute("SELECT * FROM shipments WHERE id = %s", (shipment_id,))
-    shipment = cursor.fetchone()
-    if not shipment:
-        return jsonify({'error': 'Shipment not found'}), 404
-    shipment['shipping_date'] = shipment['shipping_date'].isoformat()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
 
-    cursor.execute("SELECT * FROM shipped_units WHERE shipment_id = %s ORDER BY unit_id", (shipment_id,))
-    shipment['units'] = cursor.fetchall()
+    cursor = None
+    try:
+        cursor = get_dict_cursor(conn)
+        cursor.execute("SELECT * FROM shipments WHERE id = %s", (shipment_id,))
+        shipment = cursor.fetchone()
+        if not shipment:
+            return jsonify({'error': 'Shipment not found'}), 404
+        if shipment.get('shipping_date'):
+            shipment['shipping_date'] = shipment['shipping_date'].isoformat()
 
-    query = """
-    SELECT
-        mi.item_id,
-        mi.item_text,
-        sr.status,
-        sr.completed_by,
-        sr.completion_date,
-        sr.comments 
-    FROM checklist_master_items mi
-    LEFT JOIN shipment_checklist_responses sr ON mi.item_id = sr.item_id AND sr.shipment_id = %s
-    WHERE mi.is_active = TRUE
-    ORDER BY mi.item_order
-    """
-    cursor.execute(query, (shipment_id,))
-    checklist_items = cursor.fetchall()
-    for item in checklist_items:
-        if item.get('completion_date'):
-            item['completion_date'] = item['completion_date'].isoformat()
-    shipment['checklist_items'] = checklist_items
+        cursor.execute("SELECT * FROM shipped_units WHERE shipment_id = %s ORDER BY unit_id", (shipment_id,))
+        shipment['units'] = cursor.fetchall()
 
-    cursor.close()
-    conn.close()
-    return jsonify(shipment)
+        query = """
+        SELECT
+            mi.item_id,
+            mi.item_text,
+            sr.status,
+            sr.completed_by,
+            sr.completion_date,
+            sr.comments
+        FROM checklist_master_items mi
+        LEFT JOIN shipment_checklist_responses sr ON mi.item_id = sr.item_id AND sr.shipment_id = %s
+        WHERE mi.is_active = TRUE
+        ORDER BY mi.item_order
+        """
+        cursor.execute(query, (shipment_id,))
+        checklist_items = cursor.fetchall()
+        for item in checklist_items:
+            if item.get('completion_date'):
+                item['completion_date'] = item['completion_date'].isoformat()
+        shipment['checklist_items'] = checklist_items
+
+        return jsonify(shipment)
+    except Exception as err:
+        return jsonify({'error': str(err)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        conn.close()
 
 
 @shipments_bp.route('/<int:shipment_id>/status', methods=['PUT'])
@@ -175,35 +208,37 @@ def update_shipment_status(shipment_id):
         return jsonify({'error': "Invalid status"}), 400
 
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
     cursor = conn.cursor()
-    cursor.execute("UPDATE shipments SET status = %s WHERE id = %s", (new_status, shipment_id))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return jsonify({'message': f'Shipment status updated to {new_status}'})
+    try:
+        cursor.execute("UPDATE shipments SET status = %s WHERE id = %s", (new_status, shipment_id))
+        conn.commit()
+        if cursor.rowcount == 0:
+            return jsonify({'error': 'Shipment not found'}), 404
+        return jsonify({'message': f'Shipment status updated to {new_status}'})
+    except Exception as err:
+        conn.rollback()
+        return jsonify({'error': str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 @shipments_bp.route('/<int:shipment_id>', methods=['DELETE'])
 @admin_required
 def delete_shipment(shipment_id):
     conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
     cursor = conn.cursor()
     try:
-        # First, delete related records from shipped_units
-        cursor.execute("DELETE FROM shipped_units WHERE shipment_id = %s", (shipment_id,))
-        
-        # Second, delete related records from shipment_checklist_responses
-        cursor.execute("DELETE FROM shipment_checklist_responses WHERE shipment_id = %s", (shipment_id,))
-        
-        # Now, delete the shipment itself
         cursor.execute("DELETE FROM shipments WHERE id = %s", (shipment_id,))
-        
         conn.commit()
-        
         if cursor.rowcount == 0:
             return jsonify({'error': 'Shipment not found or already deleted'}), 404
             
         return jsonify({'message': 'Shipment and all related data successfully deleted'}), 200
-    except mysql.connector.Error as err:
+    except Exception as err:
         conn.rollback() # Rollback in case of an error
         return jsonify({'error': str(err)}), 500
     finally:
@@ -224,8 +259,8 @@ def get_dashboard_stats():
     if search_term:
         like_term = f"%{search_term}%"
         shipment_id_subquery += " LEFT JOIN shipped_units su ON s.id = su.shipment_id"
-        shipment_where_clauses.append("""(s.job_number LIKE %s OR s.customer_name LIKE %s OR su.serial_number LIKE %s
-            OR su.part_number LIKE %s OR su.model_type LIKE %s)""")
+        shipment_where_clauses.append("""(s.job_number ILIKE %s OR s.customer_name ILIKE %s OR su.serial_number ILIKE %s
+            OR su.part_number ILIKE %s OR su.model_type ILIKE %s)""")
         shipment_params.extend([like_term] * 5)
     if start_date:
         shipment_where_clauses.append("shipping_date >= %s")
@@ -238,168 +273,175 @@ def get_dashboard_stats():
         shipment_id_subquery += " WHERE " + " AND ".join(shipment_where_clauses)
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
+    cursor = None
+    try:
+        cursor = get_dict_cursor(conn)
 
-    cursor.execute(f"SELECT COUNT(id) as total_shipments FROM ({shipment_id_subquery}) as filtered_shipments", tuple(shipment_params))
-    total_shipments = cursor.fetchone()['total_shipments']
+        cursor.execute(f"SELECT COUNT(id) as total_shipments FROM ({shipment_id_subquery}) as filtered_shipments", tuple(shipment_params))
+        total_shipments_row = cursor.fetchone() or {}
+        total_shipments = total_shipments_row.get('total_shipments', 0)
 
-    unit_query = f"""
+        unit_query = f"""
         SELECT 
             COUNT(unit_id) as total_units,
             SUM(CASE WHEN first_test_pass = TRUE THEN 1 ELSE 0 END) as total_first_pass
         FROM shipped_units 
         WHERE shipment_id IN ({shipment_id_subquery})
     """
-    cursor.execute(unit_query, tuple(shipment_params))
-    unit_stats = cursor.fetchone() or {}
-    total_units = unit_stats.get('total_units') or 0
-    total_first_pass = unit_stats.get('total_first_pass') or 0
+        cursor.execute(unit_query, tuple(shipment_params))
+        unit_stats = cursor.fetchone() or {}
+        total_units = unit_stats.get('total_units') or 0
+        total_first_pass = unit_stats.get('total_first_pass') or 0
 
-    fpy = (total_first_pass / total_units) * 100 if total_units else 0
+        fpy = (total_first_pass / total_units) * 100 if total_units else 0
 
-    if search_term and like_term:
-        filter_dimension = None
-        filter_value = None
+        if search_term and like_term:
+            filter_dimension = None
+            filter_value = None
 
-        # Prefer an exact part number match if it uniquely identifies a product.
-        part_exact_query = f"""
+            # Prefer an exact part number match if it uniquely identifies a product.
+            part_exact_query = f"""
             SELECT DISTINCT part_number
             FROM shipped_units
             WHERE shipment_id IN ({shipment_id_subquery}) AND LOWER(part_number) = LOWER(%s)
         """
-        part_exact_params = shipment_params.copy()
-        part_exact_params.append(search_term)
-        cursor.execute(part_exact_query, tuple(part_exact_params))
-        part_exact_matches = [row['part_number'] for row in cursor.fetchall()]
+            part_exact_params = shipment_params.copy()
+            part_exact_params.append(search_term)
+            cursor.execute(part_exact_query, tuple(part_exact_params))
+            part_exact_matches = [row['part_number'] for row in cursor.fetchall()]
 
-        if part_exact_matches:
-            unique_matches = {pn.lower(): pn for pn in part_exact_matches}
-            if len(unique_matches) == 1:
-                filter_dimension = 'part_number'
-                filter_value = next(iter(unique_matches.values()))
+            if part_exact_matches:
+                unique_matches = {pn.lower(): pn for pn in part_exact_matches}
+                if len(unique_matches) == 1:
+                    filter_dimension = 'part_number'
+                    filter_value = next(iter(unique_matches.values()))
 
-        if not filter_dimension:
-            part_like_query = f"""
+            if not filter_dimension:
+                part_like_query = f"""
                 SELECT DISTINCT part_number
                 FROM shipped_units
                 WHERE shipment_id IN ({shipment_id_subquery})
-                AND part_number LIKE %s
+                AND part_number ILIKE %s
             """
-            part_like_params = shipment_params.copy()
-            part_like_params.append(like_term)
-            cursor.execute(part_like_query, tuple(part_like_params))
-            part_like_matches = [row['part_number'] for row in cursor.fetchall()]
+                part_like_params = shipment_params.copy()
+                part_like_params.append(like_term)
+                cursor.execute(part_like_query, tuple(part_like_params))
+                part_like_matches = [row['part_number'] for row in cursor.fetchall()]
 
-            if part_like_matches:
-                lowered = [pn.lower() for pn in part_like_matches]
-                if search_term.lower() in lowered:
-                    filter_dimension = 'part_number'
-                    filter_value = part_like_matches[lowered.index(search_term.lower())]
-                elif len(set(lowered)) == 1:
-                    filter_dimension = 'part_number'
-                    filter_value = part_like_matches[0]
-                elif len(part_like_matches) == 1:
-                    filter_dimension = 'part_number'
-                    filter_value = part_like_matches[0]
+                if part_like_matches:
+                    lowered = [pn.lower() for pn in part_like_matches]
+                    if search_term.lower() in lowered:
+                        filter_dimension = 'part_number'
+                        filter_value = part_like_matches[lowered.index(search_term.lower())]
+                    elif len(set(lowered)) == 1:
+                        filter_dimension = 'part_number'
+                        filter_value = part_like_matches[0]
+                    elif len(part_like_matches) == 1:
+                        filter_dimension = 'part_number'
+                        filter_value = part_like_matches[0]
 
-        if not filter_dimension:
-            # Fall back to model_type matching when part number doesn't uniquely identify a product.
-            exact_type_query = f"""
+            if not filter_dimension:
+                # Fall back to model_type matching when part number doesn't uniquely identify a product.
+                exact_type_query = f"""
                 SELECT DISTINCT model_type 
                 FROM shipped_units 
                 WHERE shipment_id IN ({shipment_id_subquery}) AND LOWER(model_type) = LOWER(%s)
             """
-            exact_type_params = shipment_params.copy()
-            exact_type_params.append(search_term)
-            cursor.execute(exact_type_query, tuple(exact_type_params))
-            exact_matches = [row['model_type'] for row in cursor.fetchall()]
+                exact_type_params = shipment_params.copy()
+                exact_type_params.append(search_term)
+                cursor.execute(exact_type_query, tuple(exact_type_params))
+                exact_matches = [row['model_type'] for row in cursor.fetchall()]
 
-            if len(exact_matches) == 1:
-                filter_dimension = 'model_type'
-                filter_value = exact_matches[0]
-            else:
-                like_type_query = f"""
+                if len(exact_matches) == 1:
+                    filter_dimension = 'model_type'
+                    filter_value = exact_matches[0]
+                else:
+                    like_type_query = f"""
                     SELECT DISTINCT model_type 
                     FROM shipped_units 
                     WHERE shipment_id IN ({shipment_id_subquery}) 
-                    AND (model_type LIKE %s OR part_number LIKE %s)
+                    AND (model_type ILIKE %s OR part_number ILIKE %s)
                 """
-                like_type_params = shipment_params.copy()
-                like_type_params.extend([like_term, like_term])
-                cursor.execute(like_type_query, tuple(like_type_params))
-                like_matches = [row['model_type'] for row in cursor.fetchall()]
+                    like_type_params = shipment_params.copy()
+                    like_type_params.extend([like_term, like_term])
+                    cursor.execute(like_type_query, tuple(like_type_params))
+                    like_matches = [row['model_type'] for row in cursor.fetchall()]
 
-                if like_matches:
-                    lowered_matches = [mt.lower() for mt in like_matches]
-                    if search_term.lower() in lowered_matches:
-                        filter_dimension = 'model_type'
-                        filter_value = like_matches[lowered_matches.index(search_term.lower())]
-                    elif len(set(lowered_matches)) == 1:
-                        filter_dimension = 'model_type'
-                        filter_value = like_matches[0]
-                    elif len(like_matches) == 1:
-                        filter_dimension = 'model_type'
-                        filter_value = like_matches[0]
+                    if like_matches:
+                        lowered_matches = [mt.lower() for mt in like_matches]
+                        if search_term.lower() in lowered_matches:
+                            filter_dimension = 'model_type'
+                            filter_value = like_matches[lowered_matches.index(search_term.lower())]
+                        elif len(set(lowered_matches)) == 1:
+                            filter_dimension = 'model_type'
+                            filter_value = like_matches[0]
+                        elif len(like_matches) == 1:
+                            filter_dimension = 'model_type'
+                            filter_value = like_matches[0]
 
-        if filter_dimension and filter_value:
-            filtered_query = f"""
+            if filter_dimension and filter_value:
+                filtered_query = f"""
                 SELECT 
                     COUNT(unit_id) as filtered_units,
                     SUM(CASE WHEN first_test_pass = TRUE THEN 1 ELSE 0 END) as filtered_first_pass
                 FROM shipped_units 
                 WHERE shipment_id IN ({shipment_id_subquery}) AND {filter_dimension} = %s
             """
-            filtered_params = shipment_params.copy()
-            filtered_params.append(filter_value)
-            cursor.execute(filtered_query, tuple(filtered_params))
-            filtered_stats = cursor.fetchone() or {}
-            filtered_units = filtered_stats.get('filtered_units') or 0
-            filtered_first_pass = filtered_stats.get('filtered_first_pass') or 0
+                filtered_params = shipment_params.copy()
+                filtered_params.append(filter_value)
+                cursor.execute(filtered_query, tuple(filtered_params))
+                filtered_stats = cursor.fetchone() or {}
+                filtered_units = filtered_stats.get('filtered_units') or 0
+                filtered_first_pass = filtered_stats.get('filtered_first_pass') or 0
 
-            if filtered_units:
-                fpy = (filtered_first_pass / filtered_units) * 100
+                if filtered_units:
+                    fpy = (filtered_first_pass / filtered_units) * 100
 
-    retest_fetch_query = f"""
+        retest_fetch_query = f"""
         SELECT retest_reason FROM shipped_units
         WHERE first_test_pass = FALSE AND retest_reason IS NOT NULL AND retest_reason != ''
         AND shipment_id IN ({shipment_id_subquery})
     """
-    cursor.execute(retest_fetch_query, tuple(shipment_params))
-    raw_reasons_list = cursor.fetchall()
+        cursor.execute(retest_fetch_query, tuple(shipment_params))
+        raw_reasons_list = cursor.fetchall()
     
-    reason_counts = Counter()
-    for row in raw_reasons_list:
-        reasons = [r.strip() for r in row['retest_reason'].split(',')]
-        reason_counts.update(reasons)
+        reason_counts = Counter()
+        for row in raw_reasons_list:
+            reasons = [r.strip() for r in row['retest_reason'].split(',')]
+            reason_counts.update(reasons)
     
-    retest_reasons = [{'retest_reason': reason, 'count': count} for reason, count in reason_counts.items()]
+        retest_reasons = [{'retest_reason': reason, 'count': count} for reason, count in reason_counts.items()]
 
-    failed_equipment_fetch_query = f"""
+        failed_equipment_fetch_query = f"""
         SELECT failed_equipment FROM shipped_units
         WHERE first_test_pass = FALSE AND failed_equipment IS NOT NULL AND failed_equipment != ''
         AND shipment_id IN ({shipment_id_subquery})
     """
-    cursor.execute(failed_equipment_fetch_query, tuple(shipment_params))
-    raw_failed_equipment_list = cursor.fetchall()
+        cursor.execute(failed_equipment_fetch_query, tuple(shipment_params))
+        raw_failed_equipment_list = cursor.fetchall()
 
-    failed_equipment_counts = Counter()
-    for row in raw_failed_equipment_list:
-        if row['failed_equipment']:
-            failed_equipment_counts.update([row['failed_equipment']])
+        failed_equipment_counts = Counter()
+        for row in raw_failed_equipment_list:
+            if row['failed_equipment']:
+                failed_equipment_counts.update([row['failed_equipment']])
 
-    failed_equipment_stats = [{'equipment': equipment, 'count': count} for equipment, count in failed_equipment_counts.items()]
-    
-    cursor.close()
-    conn.close()
-
-    return jsonify({
-        'total_shipments': total_shipments,
-        'total_units_shipped': total_units,
-        'first_pass_yield': round(fpy, 2),
-        'retest_reasons': retest_reasons,
-        'failed_equipment_stats': failed_equipment_stats
-    })
-
+        failed_equipment_stats = [{'equipment': equipment, 'count': count} for equipment, count in failed_equipment_counts.items()]
+        
+        return jsonify({
+            'total_shipments': total_shipments,
+            'total_units_shipped': total_units,
+            'first_pass_yield': round(fpy, 2),
+            'retest_reasons': retest_reasons,
+            'failed_equipment_stats': failed_equipment_stats
+        })
+    except Exception as err:
+        return jsonify({'error': str(err)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        conn.close()
 
 @shipments_bp.route('/stats/over-time', methods=['GET'])
 def get_stats_over_time():
@@ -408,14 +450,16 @@ def get_stats_over_time():
     end_date = request.args.get('end_date')
     
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
+    cursor = get_dict_cursor(conn)
 
     where_clauses = []
     params = []
     
     if search_term:
-        where_clauses.append("""(s.job_number LIKE %s OR s.customer_name LIKE %s OR su.serial_number LIKE %s
-            OR su.part_number LIKE %s OR su.model_type LIKE %s)""")
+        where_clauses.append("""(s.job_number ILIKE %s OR s.customer_name ILIKE %s OR su.serial_number ILIKE %s
+            OR su.part_number ILIKE %s OR su.model_type ILIKE %s)""")
         like_term = f"%{search_term}%"
         params.extend([like_term] * 5)
     if start_date:
@@ -431,9 +475,9 @@ def get_stats_over_time():
     
     query = f"""
     SELECT
-        DATE_FORMAT(s.shipping_date, '%Y-%m') AS month,
+        to_char(s.shipping_date, 'YYYY-MM') AS month,
         COUNT(su.unit_id) AS total_units,
-        (SUM(CASE WHEN su.first_test_pass = TRUE THEN 1 ELSE 0 END) / NULLIF(COUNT(su.unit_id), 0)) * 100 AS first_pass_yield
+        (SUM(CASE WHEN su.first_test_pass = TRUE THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(su.unit_id), 0)) * 100 AS first_pass_yield
     FROM
         shipped_units su
     JOIN
@@ -475,7 +519,9 @@ def get_manifest_data():
     end_date = request.args.get('end_date')
     
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
+    cursor = get_dict_cursor(conn)
 
     base_query = "SELECT DISTINCT s.id, s.job_number, s.customer_name, s.shipping_date FROM shipments s"
     where_clauses = []
@@ -483,11 +529,11 @@ def get_manifest_data():
 
     if search_term:
         base_query += " LEFT JOIN shipped_units su ON s.id = su.shipment_id"
-        where_clauses.append("(s.job_number LIKE %s OR s.customer_name LIKE %s OR su.serial_number LIKE %s OR su.original_serial_number LIKE %s OR su.part_number LIKE %s OR su.model_type LIKE %s)")
+        where_clauses.append("(s.job_number ILIKE %s OR s.customer_name ILIKE %s OR su.serial_number ILIKE %s OR su.original_serial_number ILIKE %s OR su.part_number ILIKE %s OR su.model_type ILIKE %s)")
         like_term = f"%{search_term}%"
         params.extend([like_term] * 6)
     elif customer_name:
-        where_clauses.append("s.customer_name LIKE %s")
+        where_clauses.append("s.customer_name ILIKE %s")
         params.append(f"%{customer_name}%")
 
     if start_date:
@@ -517,7 +563,7 @@ def get_manifest_data():
             if search_term:
                 like_term = f"%{search_term}%"
                 # First, try to filter units by the search term
-                filtered_unit_query = unit_query + " AND (part_number LIKE %s OR serial_number LIKE %s OR original_serial_number LIKE %s OR model_type LIKE %s) ORDER BY model_type, part_number"
+                filtered_unit_query = unit_query + " AND (part_number ILIKE %s OR serial_number ILIKE %s OR original_serial_number ILIKE %s OR model_type ILIKE %s) ORDER BY model_type, part_number"
                 cursor.execute(filtered_unit_query, tuple(unit_params + [like_term] * 4))
                 units_list = cursor.fetchall()
 
@@ -582,7 +628,9 @@ def get_weekly_shipments():
     end_of_week = start_of_week + timedelta(days=6)
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
+    cursor = get_dict_cursor(conn)
 
     try:
         cursor.execute(
@@ -621,6 +669,7 @@ def get_weekly_shipments():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
-        if conn and conn.is_connected():
+        if cursor:
             cursor.close()
+        if conn and not conn.closed:
             conn.close()
