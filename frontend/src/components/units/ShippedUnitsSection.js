@@ -22,10 +22,11 @@ const ShippedUnitsSection = ({ units, shipmentId, onUpdate, disabled, jobNumberP
     const [firstTestPass, setFirstTestPass] = useState(true);
     const [failedEquipment, setFailedEquipment] = useState('');
     const [retestReason, setRetestReason] = useState('');
+    const [totalUnitsToGenerate, setTotalUnitsToGenerate] = useState(1);
     const serialNumberInputRef = useRef(null);
     const [editingUnit, setEditingUnit] = useState(null);
 
-    const getNextSuffix = (currentUnits) => {
+    const getNextSuffix = (currentUnits = []) => {
         if (!prefix) return '';
     
         const existingSuffixes = currentUnits
@@ -41,6 +42,27 @@ const ShippedUnitsSection = ({ units, shipmentId, onUpdate, disabled, jobNumberP
     useEffect(() => {
         setSerialNumber(`${prefix}${getNextSuffix(units)}`);
     }, [prefix, units]);
+
+    const incrementSerialValue = (value) => {
+        if (!value) return '';
+        const regex = /(\d+)(?!.*\d)/;
+        const match = regex.exec(value);
+        if (!match) return '';
+        const digits = match[0];
+        const startIndex = match.index ?? (value.length - digits.length);
+        const updatedDigits = (parseInt(digits, 10) + 1).toString().padStart(digits.length, '0');
+        return `${value.slice(0, startIndex)}${updatedDigits}${value.slice(startIndex + digits.length)}`;
+    };
+
+    const normalizeSerial = (serial) => (serial || '').trim().toLowerCase();
+
+    const serialExistsLocally = (serial, pendingSerials = []) => {
+        const normalized = normalizeSerial(serial);
+        if (!normalized) return false;
+        const inExisting = (units || []).some(unit => normalizeSerial(unit.serial_number) === normalized);
+        const inPending = pendingSerials.some(sn => normalizeSerial(sn) === normalized);
+        return inExisting || inPending;
+    };
 
     useEffect(() => {
         const fetchModelsForDropdown = async () => {
@@ -94,38 +116,85 @@ const ShippedUnitsSection = ({ units, shipmentId, onUpdate, disabled, jobNumberP
             return;
         }
 
-        const newUnit = {
-            unit_id: `temp-${Date.now()}`,
+        const count = Math.max(1, parseInt(totalUnitsToGenerate, 10) || 1);
+        const trimmedStartSerial = serialNumber.trim();
+        if (!trimmedStartSerial) {
+            toast.error('Enter a valid starting serial number.');
+            return;
+        }
+
+        const pendingSerials = [];
+        let nextSerialCandidate = trimmedStartSerial;
+
+        for (let i = 0; i < count; i += 1) {
+            if (serialExistsLocally(nextSerialCandidate, pendingSerials)) {
+                toast.error(`Serial Number '${nextSerialCandidate}' already exists. Adjust the starting number or quantity.`);
+                return;
+            }
+            pendingSerials.push(nextSerialCandidate);
+            if (i < count - 1) {
+                const incremented = incrementSerialValue(nextSerialCandidate);
+                if (!incremented) {
+                    toast.error('Unable to auto-increment this serial number format. Try entering the next serial manually.');
+                    return;
+                }
+                nextSerialCandidate = incremented;
+            }
+        }
+
+        const newUnits = pendingSerials.map((sn, idx) => ({
+            unit_id: `temp-${Date.now()}-${idx}`,
             model_type: selectedType,
             part_number: selectedPartNumber,
-            serial_number: serialNumber,
+            serial_number: sn,
             original_serial_number: originalSerialNumber,
             first_test_pass: firstTestPass,
             failed_equipment: firstTestPass ? null : (failedEquipment || null),
             retest_reason: firstTestPass ? null : (retestReason || null)
-        };
+        }));
 
-        const updatedUnitsForNextSN = [...units, newUnit];
+        const originalUnits = [...units];
+        let optimisticUnits = [...units, ...newUnits];
+        onUpdate({ units: optimisticUnits });
 
-        // Optimistically update UI
-        onUpdate({ units: updatedUnitsForNextSN });
-        setSerialNumber(`${prefix}${getNextSuffix(updatedUnitsForNextSN)}`); // Set next serial
+        const nextSerialSuggestion = (() => {
+            const lastSerial = pendingSerials[pendingSerials.length - 1];
+            const incremented = incrementSerialValue(lastSerial);
+            if (incremented) return incremented;
+            return prefix ? `${prefix}${getNextSuffix(optimisticUnits)}` : '';
+        })();
+
+        setSerialNumber(nextSerialSuggestion);
         setOriginalSerialNumber('');
         setFirstTestPass(true);
         setFailedEquipment('');
         setRetestReason('');
-        serialNumberInputRef.current.focus();
+        setTotalUnitsToGenerate(1);
+        serialNumberInputRef.current?.focus();
 
         try {
-            const response = await addUnit({ ...newUnit, shipment_id: shipmentId });
-            toast.success('Unit added successfully!');
-            // Replace temp ID with real ID from backend
-            const finalUnits = units.map(u => u.unit_id === newUnit.unit_id ? { ...newUnit, unit_id: response.data.id } : u);
-            onUpdate({ units: [...finalUnits, { ...newUnit, unit_id: response.data.id }] });
+            for (const tempUnit of newUnits) {
+                const payload = {
+                    shipment_id: shipmentId,
+                    model_type: tempUnit.model_type,
+                    part_number: tempUnit.part_number,
+                    serial_number: tempUnit.serial_number,
+                    original_serial_number: tempUnit.original_serial_number,
+                    first_test_pass: tempUnit.first_test_pass,
+                    failed_equipment: tempUnit.failed_equipment,
+                    retest_reason: tempUnit.retest_reason
+                };
+                const response = await addUnit(payload);
+                optimisticUnits = optimisticUnits.map(unit =>
+                    unit.unit_id === tempUnit.unit_id ? { ...tempUnit, unit_id: response.data.id } : unit
+                );
+                onUpdate({ units: optimisticUnits });
+            }
+            toast.success(newUnits.length > 1 ? `Generated ${newUnits.length} units!` : 'Unit added successfully!');
         } catch (error) {
-            toast.error(error.response?.data?.error || 'Failed to add unit.');
-            // Revert optimistic update on error
-            onUpdate({ units: units });
+            const cleanedUnits = optimisticUnits.filter(unit => !(typeof unit.unit_id === 'string' && unit.unit_id.startsWith('temp-')));
+            onUpdate({ units: cleanedUnits.length ? cleanedUnits : originalUnits });
+            toast.error(error.response?.data?.error || 'Failed to add all requested units. Any completed saves were kept.');
         }
     };
     
@@ -188,6 +257,20 @@ const ShippedUnitsSection = ({ units, shipmentId, onUpdate, disabled, jobNumberP
                         <div className="serial-input-wrapper">
                             <input ref={serialNumberInputRef} type="text" placeholder="Serial Number" value={serialNumber} onChange={e => setSerialNumber(e.target.value)} required />
                             {!isSerialUnique && <span className="serial-error">! Exists</span>}
+                        </div>
+                        <div className="total-units-wrapper">
+                            <input
+                                type="number"
+                                min="1"
+                                value={totalUnitsToGenerate}
+                                onChange={e => {
+                                    const parsed = parseInt(e.target.value, 10);
+                                    setTotalUnitsToGenerate(!isNaN(parsed) && parsed > 0 ? parsed : 1);
+                                }}
+                                placeholder="Total Units"
+                                aria-label="Total units to auto add"
+                            />
+                            <small>Total units to auto-generate</small>
                         </div>
                         <label className="checkbox-label">
                             <input type="checkbox" checked={firstTestPass} onChange={e => setFirstTestPass(e.target.checked)} />

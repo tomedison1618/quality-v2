@@ -147,6 +147,7 @@ const ChecklistDetailPage = () => {
                     shippingDate={shipment.shipping_date}
                     onUpdate={handleLocalUpdate}
                     disabled={isPageLocked}
+                    unitTotal={shipment.units?.length || 0}
                 />
             </div>
             

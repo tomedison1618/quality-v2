@@ -3,7 +3,7 @@ import { saveChecklistResponse } from '../../services/apiService';
 import useDebounce from '../../hooks/useDebounce';
 import { useAuth } from '../../contexts/AuthContext';
 
-const ChecklistTable = ({ items, shipmentId, qcName, shippingDate, onUpdate, disabled }) => {
+const ChecklistTable = ({ items, shipmentId, qcName, shippingDate, onUpdate, disabled, unitTotal = 0 }) => {
     const { user } = useAuth();
     const [editingRowId, setEditingRowId] = useState(null);
     const [editCompletedBy, setEditCompletedBy] = useState('');
@@ -120,6 +120,9 @@ const ChecklistTable = ({ items, shipmentId, qcName, shippingDate, onUpdate, dis
         setEditingCommentRowId(null);
     };
 
+    const isFirstSerialNumberRow = (label) =>
+        typeof label === 'string' && label.toLowerCase().includes('first serial number');
+
     return (
         <table className="checklist-table professional-edit">
             <thead>
@@ -134,7 +137,14 @@ const ChecklistTable = ({ items, shipmentId, qcName, shippingDate, onUpdate, dis
             <tbody>
                 {items.map(item => (
                     <tr key={item.item_id} className={editingRowId === item.item_id ? 'is-editing' : ''}>
-                        <td>{item.item_text}</td>
+                        <td>
+                            <div className="checklist-item-text">
+                                <span>{item.item_text}</span>
+                                {isFirstSerialNumberRow(item.item_text) && (
+                                    <span className="unit-total-chip">Unit Total: {unitTotal}</span>
+                                )}
+                            </div>
+                        </td>
                         <td>
                             <div className="status-buttons">
                                 <button
