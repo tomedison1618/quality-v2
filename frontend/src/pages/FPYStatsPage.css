@@ -68,6 +68,10 @@
     height: 420px;
 }
 
+.chart-wrapper canvas {
+    font-weight: 600;
+}
+
 .chart-footnote {
     margin-top: 0.75rem;
     font-size: 0.8rem;

@@ -94,3 +94,5 @@ export const getWeeklyFPYStats = ({ anchor_date, weeks } = {}) => {
     if (weeks) params.weeks = weeks;
     return api.get('/shipments/fpy/weekly', { params });
 };
+
+export const getOverallFPYStats = () => api.get('/shipments/fpy/overall');

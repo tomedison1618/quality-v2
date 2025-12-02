@@ -635,6 +635,62 @@ def get_weekly_fpy_stats():
     })
 
 
+@shipments_bp.route('/fpy/overall', methods=['GET'])
+def get_overall_fpy_stats():
+    """
+    Returns the lifetime FPY for every part number plus overall totals.
+    """
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
+    cursor = get_dict_cursor(conn)
+    try:
+        cursor.execute("""
+            SELECT
+                su.part_number,
+                su.model_type,
+                COUNT(*) AS total_units,
+                SUM(CASE WHEN su.first_test_pass = TRUE THEN 1 ELSE 0 END) AS first_pass_units
+            FROM shipped_units su
+            GROUP BY su.part_number, su.model_type
+            ORDER BY su.part_number
+        """)
+        parts = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT
+                COUNT(*) AS total_units,
+                SUM(CASE WHEN first_test_pass = TRUE THEN 1 ELSE 0 END) AS first_pass_units
+            FROM shipped_units
+        """)
+        totals_row = cursor.fetchone() or {}
+        total_units = totals_row.get('total_units') or 0
+        total_first = totals_row.get('first_pass_units') or 0
+        total_fpy = (total_first / total_units) * 100 if total_units else 0
+
+        formatted_parts = []
+        for part in parts:
+            units = part['total_units'] or 0
+            first_pass = part['first_pass_units'] or 0
+            formatted_parts.append({
+                'part_number': part['part_number'],
+                'model_type': part['model_type'],
+                'total_units': units,
+                'first_pass_units': first_pass,
+                'first_pass_yield': (first_pass / units) * 100 if units else None
+            })
+
+        return jsonify({
+            'total_fpy': round(total_fpy, 2),
+            'parts': formatted_parts
+        })
+    except Exception as err:
+        return jsonify({'error': str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @shipments_bp.route('/manifest', methods=['GET'])
 def get_manifest_data():
     search_term = request.args.get('search', '')

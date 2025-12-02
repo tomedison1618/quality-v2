@@ -9,7 +9,7 @@ import {
     Tooltip,
     Legend,
 } from 'chart.js';
-import { getWeeklyFPYStats } from '../services/apiService';
+import { getWeeklyFPYStats, getOverallFPYStats } from '../services/apiService';
 import './FPYStatsPage.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -21,6 +21,7 @@ const FPYStatsPage = () => {
     const [anchorDate, setAnchorDate] = useState(todayISO());
     const [weeksCount, setWeeksCount] = useState(6);
     const [rawWeeks, setRawWeeks] = useState([]);
+    const [globalTotals, setGlobalTotals] = useState({ parts: {}, total: null });
     const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -46,49 +47,41 @@ const FPYStatsPage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [anchorDate, weeksCount]);
 
+    useEffect(() => {
+        const fetchGlobal = async () => {
+            try {
+                const { data } = await getOverallFPYStats();
+                const partsMap = {};
+                (data.parts || []).forEach((part) => {
+                    if (part.part_number) {
+                        partsMap[part.part_number] = part.first_pass_yield;
+                    }
+                });
+                setGlobalTotals({
+                    parts: partsMap,
+                    total: data?.total_fpy ?? null
+                });
+            } catch (err) {
+                console.error('Failed to load overall FPY stats', err);
+            }
+        };
+        fetchGlobal();
+    }, []);
+
     const selectedWeek = rawWeeks[selectedWeekIndex] || null;
     const maxWeekIndex = rawWeeks.length - 1;
 
     const getProductKey = (product, fallbackIndex = 0) =>
         product?.part_number || product?.model_type || `product-${fallbackIndex}`;
 
-    const formatProductLabel = (product) => {
-        if (!product) return '';
-        if (product.part_number && product.model_type) {
-            return `${product.part_number} (${product.model_type})`;
-        }
-        if (product.part_number) return product.part_number;
-        return product.model_type || 'Unknown';
-    };
+    const formatProductLabel = (product) => product?.part_number || product?.model_type || 'Unknown';
 
     const averages = useMemo(() => {
-        const partAgg = {};
-        let totalUnits = 0;
-        let totalFirstPass = 0;
-
-        rawWeeks.forEach((week) => {
-            (week.products || []).forEach((product, idx) => {
-                const key = getProductKey(product, idx);
-                if (!partAgg[key]) {
-                    partAgg[key] = { total: 0, pass: 0 };
-                }
-                partAgg[key].total += product.total_units || 0;
-                partAgg[key].pass += product.first_pass_units || 0;
-            });
-            if (week.totals) {
-                totalUnits += week.totals.total_units || 0;
-                totalFirstPass += week.totals.first_pass_units || 0;
-            }
-        });
-
-        const averagesByPart = {};
-        Object.entries(partAgg).forEach(([key, { total, pass }]) => {
-            averagesByPart[key] = total ? (pass / total) * 100 : null;
-        });
-
-        const totalAverage = totalUnits ? (totalFirstPass / totalUnits) * 100 : null;
-        return { averagesByPart, totalAverage };
-    }, [rawWeeks]);
+        return {
+            averagesByPart: globalTotals.parts,
+            totalAverage: globalTotals.total
+        };
+    }, [globalTotals]);
 
     const chartConfig = useMemo(() => {
         if (!selectedWeek || !(selectedWeek.products?.length || selectedWeek.totals?.total_units)) {
@@ -112,7 +105,7 @@ const FPYStatsPage = () => {
 
         const dataPoints = [...productEntries, totalEntry];
         const currentValues = dataPoints.map((dp) => dp.value);
-        const averageValues = dataPoints.map((dp) =>
+        const overallValues = dataPoints.map((dp) =>
             dp.key === AVERAGE_TOTAL_KEY ? averages.totalAverage : averages.averagesByPart[dp.key] ?? null
         );
 
@@ -127,25 +120,34 @@ const FPYStatsPage = () => {
                 ctx.save();
                 ctx.font = '12px Inter, sans-serif';
                 ctx.textAlign = 'center';
-                const bars = chart.getDatasetMeta(0)?.data || [];
-                bars.forEach((bar, index) => {
-                    const current = chart.data.datasets[0].data[index];
-                    const avg = chart.data.datasets[1].data[index];
+                const lineMeta = chart.getDatasetMeta(0);
+                const barMeta = chart.getDatasetMeta(1);
+        const points = barMeta?.data || [];
+        const originalFont = ctx.font;
+        points.forEach((bar, index) => {
+            const current = chart.data.datasets[1].data[index];
+            const avg = chart.data.datasets[0].data[index];
+            const delta = (typeof current === 'number' && typeof avg === 'number')
+                ? current - avg
+                : null;
+                    const barTop = bar ? bar.y : 0;
 
                     if (bar && typeof current === 'number') {
                         ctx.fillStyle = '#0d47a1';
-                        ctx.fillText(`${current.toFixed(1)}%`, bar.x, bar.y - 6);
+                        ctx.fillText(`${current.toFixed(1)}%`, bar.x, barTop - 6);
                     }
 
                     if (bar && typeof avg === 'number') {
+                        ctx.font = '600 12px Inter, sans-serif';
                         ctx.fillStyle = '#e65100';
-                        ctx.fillText(`${avg.toFixed(1)}% (avg)`, bar.x, bar.y - 22);
+                        ctx.fillText(`${avg.toFixed(1)}% (overall)`, bar.x, barTop - 24);
+                        ctx.font = originalFont;
                     }
 
-                    if (bar && typeof current === 'number' && typeof avg === 'number' && current > avg) {
+                    if (bar && delta !== null && delta > 0) {
                         ctx.fillStyle = '#ffb300';
                         ctx.font = '18px Inter, sans-serif';
-                        ctx.fillText('★', bar.x, bar.y - 52);
+                        ctx.fillText('★', bar.x, barTop - 45);
                         ctx.font = '12px Inter, sans-serif';
                     }
                 });
@@ -158,17 +160,27 @@ const FPYStatsPage = () => {
                 labels: dataPoints.map((dp) => dp.label),
                 datasets: [
                     {
+                        label: 'Overall FPY',
+                        data: overallValues,
+                        type: 'line',
+                        borderColor: '#e65100',
+                        backgroundColor: '#e65100',
+                        borderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 5,
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y',
+                        order: 1,
+                    },
+                    {
                         label: 'Current Week FPY',
                         data: currentValues,
                         backgroundColor: barColors,
                         borderRadius: 8,
                         maxBarThickness: 60,
-                    },
-                    {
-                        label: 'Rolling Avg FPY',
-                        data: averageValues,
-                        backgroundColor: 'rgba(0,0,0,0)',
-                        borderWidth: 0,
+                        yAxisID: 'y',
+                        order: 2,
                     },
                 ],
             },
@@ -197,7 +209,12 @@ const FPYStatsPage = () => {
                 scales: {
                     x: {
                         offset: true,
-                        ticks: { autoSkip: false },
+                        ticks: {
+                            autoSkip: false,
+                            font: {
+                                weight: 'bold'
+                            }
+                        },
                     },
                     y: {
                         beginAtZero: true,
