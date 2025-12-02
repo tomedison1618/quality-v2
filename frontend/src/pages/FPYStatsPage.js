@@ -269,11 +269,7 @@ const FPYStatsPage = () => {
                     <div className="chart-wrapper">
                         <Bar data={chartConfig.data} options={chartConfig.options} plugins={chartConfig.plugins} />
                     </div>
-                    <div className="chart-footnote">
-                        Bars show the current week FPY for each part number (orange = total). The lighter annotation
-                        above each bar indicates the rolling average FPY so you can compare current vs. average without
-                        a second bar.
-                    </div>
+                    <div className="chart-footnote" />
                 </div>
             )}
         </div>
