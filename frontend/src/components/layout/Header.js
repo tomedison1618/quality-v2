@@ -34,6 +34,7 @@ const Header = () => {
                 
                     <NavLink to="/manifest" className={({ isActive }) => isActive ? 'active-link' : ''}>Manifest</NavLink>
                     <NavLink to="/weekly-reports" className={({ isActive }) => isActive ? 'active-link' : ''}>Weekly Reports</NavLink>
+                    <NavLink to="/fpy-stats" className={({ isActive }) => isActive ? 'active-link' : ''}>FPY Stats</NavLink>
                 
                     {canUserEdit && (
                         <NavLink to="/manage-models" className={({ isActive }) => isActive ? 'active-link' : ''}>Manage Models</NavLink>

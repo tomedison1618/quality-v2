@@ -42,6 +42,10 @@ const LoginPage = () => {
                     </div>
                     <button type="submit" className="primary-button">Login</button>
                 </form>
+
+                <div className="login-public-link">
+                    <a href="#/fpy-stats">View FPY Stats without logging in</a>
+                </div>
             </div>
         </div>
     );

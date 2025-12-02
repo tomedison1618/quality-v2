@@ -510,6 +510,130 @@ def get_stats_over_time():
         cursor.close()
         conn.close()
 
+@shipments_bp.route('/fpy/weekly', methods=['GET'])
+def get_weekly_fpy_stats():
+    """
+    Returns weekly First Pass Yield statistics grouped by product (model_type).
+    Weeks begin on Sunday and end on Saturday.
+    Query params:
+      - anchor_date (YYYY-MM-DD) : week that acts as the latest week in the window (defaults to today)
+      - weeks (int) : number of weeks to include looking backwards from anchor (defaults to 6, capped at 26)
+    """
+    anchor_date_str = request.args.get('anchor_date')
+    weeks_param = request.args.get('weeks')
+
+    try:
+        anchor_date = datetime.strptime(anchor_date_str, '%Y-%m-%d').date() if anchor_date_str else date.today()
+    except ValueError:
+        return jsonify({'error': "Invalid anchor_date format. Use YYYY-MM-DD."}), 400
+
+    try:
+        weeks_count = int(weeks_param) if weeks_param else 6
+    except ValueError:
+        return jsonify({'error': "Invalid weeks parameter. Use an integer between 1 and 26."}), 400
+    weeks_count = max(1, min(weeks_count, 26))
+
+    # Align anchor date to Sunday (start of week used throughout the UI).
+    anchor_weekday = (anchor_date.weekday() + 1) % 7  # convert Monday=0 to Sunday=0
+    anchor_start = anchor_date - timedelta(days=anchor_weekday)
+    anchor_end = anchor_start + timedelta(days=6)
+
+    # Compute the earliest week we need to include.
+    start_range = anchor_start - timedelta(days=7 * (weeks_count - 1))
+    end_range = anchor_end
+
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection failed'}), 500
+    cursor = get_dict_cursor(conn)
+
+    # The SQL groups by model type and Sunday-based week bucket.
+    stats_query = """
+        SELECT
+            (s.shipping_date - (EXTRACT(DOW FROM s.shipping_date)::int) * INTERVAL '1 day')::date AS week_start,
+            su.part_number,
+            su.model_type,
+            COUNT(*) AS total_units,
+            SUM(CASE WHEN su.first_test_pass = TRUE THEN 1 ELSE 0 END) AS first_pass_units
+        FROM shipped_units su
+        JOIN shipments s ON su.shipment_id = s.id
+        WHERE s.shipping_date BETWEEN %s AND %s
+        GROUP BY week_start, su.part_number, su.model_type
+    """
+
+    try:
+        cursor.execute(stats_query, (start_range, end_range))
+        rows = cursor.fetchall()
+    except Exception as err:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': str(err)}), 500
+
+    cursor.close()
+    conn.close()
+
+    data_map = {}
+    part_numbers = {}
+    for row in rows:
+        week_start = row['week_start']
+        part_number = row['part_number']
+        model_type = row['model_type']
+        part_numbers.setdefault(week_start, set()).add((part_number, model_type))
+        data_map[(week_start, part_number)] = {
+            'total_units': row['total_units'],
+            'first_pass_units': row['first_pass_units'],
+            'model_type': model_type
+        }
+
+    weeks_payload = []
+    for i in range(weeks_count):
+        week_start = anchor_start - timedelta(days=7 * i)
+        week_end = week_start + timedelta(days=6)
+        week_entry = {
+            'start': week_start.isoformat(),
+            'end': week_end.isoformat(),
+            'label': f"{week_start.isoformat()} to {week_end.isoformat()}",
+            'products': [],
+            'totals': {
+                'total_units': 0,
+                'first_pass_units': 0,
+                'first_pass_yield': 0
+            }
+        }
+
+        total_units_week = 0
+        first_pass_week = 0
+        week_part_numbers = sorted(part_numbers.get(week_start, []), key=lambda x: (x[0] or '', x[1] or ''))
+        for part_number, model in week_part_numbers:
+            stats = data_map.get((week_start, part_number))
+            total_units = (stats['total_units'] if stats else 0) or 0
+            first_pass_units = (stats['first_pass_units'] if stats else 0) or 0
+            fpy = (first_pass_units / total_units) * 100 if total_units else 0
+            week_entry['products'].append({
+                'part_number': part_number,
+                'model_type': model,
+                'total_units': total_units,
+                'first_pass_units': first_pass_units,
+                'first_pass_yield': round(fpy, 2)
+            })
+            total_units_week += total_units
+            first_pass_week += first_pass_units
+
+        if total_units_week:
+            week_entry['totals']['total_units'] = total_units_week
+            week_entry['totals']['first_pass_units'] = first_pass_week
+            week_entry['totals']['first_pass_yield'] = round((first_pass_week / total_units_week) * 100, 2)
+
+        # Maintain chronological order from newest week at top.
+        weeks_payload.append(week_entry)
+
+    return jsonify({
+        'anchor_week_start': anchor_start.isoformat(),
+        'anchor_week_end': anchor_end.isoformat(),
+        'weeks_requested': weeks_count,
+        'weeks': weeks_payload
+    })
+
 
 @shipments_bp.route('/manifest', methods=['GET'])
 def get_manifest_data():

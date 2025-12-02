@@ -15,6 +15,7 @@ import WeeklyReportsPage from './pages/WeeklyReportsPage';
 import LoginPage from './pages/LoginPage';
 import UserManagementPage from './pages/UserManagementPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
+import FPYStatsPage from './pages/FPYStatsPage';
 
 import './App.css';
 
@@ -43,6 +44,7 @@ function App() {
                 <Route path="/manage-models" element={<ProtectedRoute><ModelManagementPage /></ProtectedRoute>} />
                 <Route path="/manifest" element={<ProtectedRoute><ManifestPage /></ProtectedRoute>} />
                 <Route path="/weekly-reports" element={<ProtectedRoute><WeeklyReportsPage /></ProtectedRoute>} />
+                <Route path="/fpy-stats" element={<FPYStatsPage />} />
                 <Route path="/manage-users" element={<ProtectedRoute><UserManagementPage /></ProtectedRoute>} />
                 <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
                 <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />

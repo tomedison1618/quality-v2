@@ -87,3 +87,10 @@ export const getWeeklyShipments = (date) => {
     const params = date ? { date } : {};
     return api.get('/shipments/weekly', { params });
 };
+
+export const getWeeklyFPYStats = ({ anchor_date, weeks } = {}) => {
+    const params = {};
+    if (anchor_date) params.anchor_date = anchor_date;
+    if (weeks) params.weeks = weeks;
+    return api.get('/shipments/fpy/weekly', { params });
+};

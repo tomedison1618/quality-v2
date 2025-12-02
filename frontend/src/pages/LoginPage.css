@@ -81,3 +81,18 @@
 .login-form .primary-button:hover {
     background-color: #2980b9;
 }
+
+.login-public-link {
+    padding: 0 2.5rem 2rem;
+    text-align: center;
+}
+
+.login-public-link a {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.login-public-link a:hover {
+    text-decoration: underline;
+}
