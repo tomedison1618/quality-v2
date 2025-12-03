@@ -94,6 +94,8 @@ const FPYStatsPage = () => {
                 key,
                 label: formatProductLabel(product),
                 value: product.first_pass_yield ?? 0,
+                passedUnits: product.first_pass_units ?? 0,
+                totalUnits: product.total_units ?? 0,
             };
         });
 
@@ -101,9 +103,15 @@ const FPYStatsPage = () => {
             key: AVERAGE_TOTAL_KEY,
             label: 'Total',
             value: selectedWeek.totals?.first_pass_yield ?? 0,
+            passedUnits: selectedWeek.totals?.first_pass_units ?? 0,
+            totalUnits: selectedWeek.totals?.total_units ?? 0,
         };
 
         const dataPoints = [...productEntries, totalEntry];
+        const unitBreakdown = dataPoints.map((dp) => ({
+            passed: dp.passedUnits ?? 0,
+            total: dp.totalUnits ?? 0,
+        }));
         const currentValues = dataPoints.map((dp) => dp.value);
         const overallValues = dataPoints.map((dp) =>
             dp.key === AVERAGE_TOTAL_KEY ? averages.totalAverage : averages.averagesByPart[dp.key] ?? null
@@ -120,16 +128,19 @@ const FPYStatsPage = () => {
                 ctx.save();
                 ctx.font = '12px Inter, sans-serif';
                 ctx.textAlign = 'center';
-                const lineMeta = chart.getDatasetMeta(0);
                 const barMeta = chart.getDatasetMeta(1);
-        const points = barMeta?.data || [];
-        const originalFont = ctx.font;
-        points.forEach((bar, index) => {
-            const current = chart.data.datasets[1].data[index];
-            const avg = chart.data.datasets[0].data[index];
-            const delta = (typeof current === 'number' && typeof avg === 'number')
-                ? current - avg
-                : null;
+                const points = barMeta?.data || [];
+                const originalFont = ctx.font;
+                const units = chart.data.datasets[1]?.unitBreakdown || [];
+                const xAxis = chart.scales?.x;
+                const breakdownY = (xAxis?.bottom ?? chart.chartArea.bottom) + 20;
+
+                points.forEach((bar, index) => {
+                    const current = chart.data.datasets[1].data[index];
+                    const avg = chart.data.datasets[0].data[index];
+                    const delta = (typeof current === 'number' && typeof avg === 'number')
+                        ? current - avg
+                        : null;
                     const barTop = bar ? bar.y : 0;
 
                     if (bar && typeof current === 'number') {
@@ -149,6 +160,14 @@ const FPYStatsPage = () => {
                         ctx.font = '18px Inter, sans-serif';
                         ctx.fillText('★', bar.x, barTop - 45);
                         ctx.font = '12px Inter, sans-serif';
+                    }
+
+                    const breakdown = units[index];
+                    if (bar && breakdown && (breakdown.passed || breakdown.total)) {
+                        ctx.fillStyle = '#c62828';
+                        ctx.font = '600 12px Inter, sans-serif';
+                        ctx.fillText(`${breakdown.passed}/${breakdown.total}`, bar.x, breakdownY);
+                        ctx.font = originalFont;
                     }
                 });
                 ctx.restore();
@@ -181,12 +200,18 @@ const FPYStatsPage = () => {
                         maxBarThickness: 60,
                         yAxisID: 'y',
                         order: 2,
+                        unitBreakdown,
                     },
                 ],
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        bottom: 40,
+                    },
+                },
                 plugins: {
                     legend: { display: false },
                     title: {
