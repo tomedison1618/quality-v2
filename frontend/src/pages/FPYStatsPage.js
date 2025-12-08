@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -16,6 +16,72 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 const AVERAGE_TOTAL_KEY = '__TOTAL__';
+const WEEK_IN_MS = 7 * 24 * 60 * 60 * 1000;
+
+const safeDate = (value) => {
+    if (!value) {
+        return null;
+    }
+    const parsed = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const toISODate = (date) => (date ? date.toISOString().split('T')[0] : '');
+
+const getSundayStart = (date) => {
+    const base = safeDate(date);
+    if (!base) {
+        return null;
+    }
+    const sunday = new Date(base.getTime());
+    const day = sunday.getUTCDay();
+    sunday.setUTCHours(0, 0, 0, 0);
+    sunday.setUTCDate(sunday.getUTCDate() - day);
+    return sunday;
+};
+
+const computeWeeksNeeded = (quarterStart, anchorStart) => {
+    if (!quarterStart || !anchorStart) {
+        return 13;
+    }
+    const diff = Math.max(anchorStart.getTime() - quarterStart.getTime(), 0);
+    const diffWeeks = Math.ceil(diff / WEEK_IN_MS);
+    const weeksWindow = diffWeeks + 1;
+    return Math.min(Math.max(weeksWindow, 4), 26);
+};
+
+const getQuarterDetails = (isoDate) => {
+    const base = safeDate(isoDate || todayISO());
+    if (!base) {
+        return null;
+    }
+    const year = base.getUTCFullYear();
+    const quarterIndex = Math.floor(base.getUTCMonth() / 3);
+    const startDate = new Date(Date.UTC(year, quarterIndex * 3, 1));
+    const endDate = new Date(Date.UTC(year, quarterIndex * 3 + 3, 0));
+    startDate.setUTCHours(0, 0, 0, 0);
+    endDate.setUTCHours(0, 0, 0, 0);
+    const anchorStart = getSundayStart(endDate);
+    return {
+        index: quarterIndex + 1,
+        label: `Q${quarterIndex + 1} ${year}`,
+        startDate,
+        endDate,
+        startISO: toISODate(startDate),
+        endISO: toISODate(endDate),
+        anchorStart,
+        anchorDateISO: toISODate(endDate),
+        weeksToFetch: computeWeeksNeeded(startDate, anchorStart),
+    };
+};
+
+const formatWeekEndLabel = (endISO) => {
+    const endDate = safeDate(endISO);
+    if (!endDate) {
+        return endISO || '';
+    }
+    return endDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
 
 const FPYStatsPage = () => {
     const [anchorDate, setAnchorDate] = useState(todayISO());
@@ -25,6 +91,10 @@ const FPYStatsPage = () => {
     const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [quarterDate, setQuarterDate] = useState(todayISO());
+    const [quarterWeeks, setQuarterWeeks] = useState([]);
+    const [quarterLoading, setQuarterLoading] = useState(false);
+    const [quarterError, setQuarterError] = useState('');
 
     const fetchStats = async () => {
         setLoading(true);
@@ -67,6 +137,87 @@ const FPYStatsPage = () => {
         };
         fetchGlobal();
     }, []);
+
+    const quarterMeta = useMemo(() => getQuarterDetails(quarterDate), [quarterDate]);
+
+    const sortedQuarterWeeks = useMemo(() => {
+        if (!quarterWeeks || quarterWeeks.length === 0) {
+            return [];
+        }
+        return [...quarterWeeks].sort((a, b) => {
+            const startA = safeDate(a?.start)?.getTime() ?? 0;
+            const startB = safeDate(b?.start)?.getTime() ?? 0;
+            return startA - startB;
+        });
+    }, [quarterWeeks]);
+
+    const weeklySectionRef = React.useRef(null);
+
+    const scrollToWeekly = useCallback(() => {
+        window.scrollTo({
+            top: document.documentElement.scrollHeight,
+            behavior: 'smooth'
+        });
+    }, []);
+
+    const focusWeekFromQuarter = useCallback((week) => {
+        if (!week) {
+            return;
+        }
+        const targetStart = week.start;
+        if (targetStart) {
+            const existingIndex = rawWeeks.findIndex((w) => w.start === targetStart);
+            if (existingIndex >= 0) {
+                setSelectedWeekIndex(existingIndex);
+                scrollToWeekly();
+                return;
+            }
+        }
+        const anchorISO = week.end || week.start;
+        if (anchorISO) {
+            setAnchorDate(anchorISO);
+        }
+    }, [rawWeeks, setAnchorDate, setSelectedWeekIndex, scrollToWeekly]);
+
+    useEffect(() => {
+        if (!quarterMeta) {
+            setQuarterWeeks([]);
+            return;
+        }
+
+        const fetchQuarterStats = async () => {
+            setQuarterLoading(true);
+            setQuarterError('');
+            try {
+                const { data } = await getWeeklyFPYStats({
+                    anchor_date: quarterMeta.anchorDateISO,
+                    weeks: quarterMeta.weeksToFetch,
+                });
+                const weeks = data.weeks || [];
+                const filteredWeeks = weeks.filter((week) => {
+                    const weekStart = safeDate(week?.start);
+                    const weekEnd = safeDate(week?.end);
+                    const hasUnits = (week?.totals?.total_units ?? 0) > 0;
+                    return (
+                        weekStart &&
+                        weekEnd &&
+                        weekEnd >= quarterMeta.startDate &&
+                        weekStart <= quarterMeta.endDate &&
+                        hasUnits
+                    );
+                });
+                setQuarterWeeks(filteredWeeks);
+            } catch (err) {
+                console.error(err);
+                setQuarterWeeks([]);
+                setQuarterError(err.response?.data?.error || 'Failed to load quarterly FPY stats.');
+            } finally {
+                setQuarterLoading(false);
+            }
+        };
+
+        fetchQuarterStats();
+    }, [quarterMeta, scrollToWeekly]);
 
     const selectedWeek = rawWeeks[selectedWeekIndex] || null;
     const maxWeekIndex = rawWeeks.length - 1;
@@ -253,11 +404,195 @@ const FPYStatsPage = () => {
         };
     }, [selectedWeek, averages]);
 
+    const quarterChartConfig = useMemo(() => {
+        if (!quarterMeta || sortedQuarterWeeks.length === 0) {
+            return null;
+        }
+
+        const labels = sortedQuarterWeeks.map((week) => formatWeekEndLabel(week.end));
+        const values = sortedQuarterWeeks.map((week) => week?.totals?.first_pass_yield ?? 0);
+        const barColors = sortedQuarterWeeks.map((week) => {
+            const isSelected = selectedWeek?.start && week.start === selectedWeek.start;
+            return isSelected ? '#ff8f00' : '#26a69a';
+        });
+        const unitBreakdown = sortedQuarterWeeks.map((week) => ({
+            passed: week?.totals?.first_pass_units ?? 0,
+            total: week?.totals?.total_units ?? 0,
+        }));
+
+        const quarterValueLabelPlugin = {
+            id: 'quarterLabels',
+            afterDatasetsDraw(chart) {
+                const { ctx } = chart;
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                const dataset = chart.data.datasets[0];
+                const data = dataset?.data || [];
+                const units = dataset?.unitBreakdown || [];
+                const bars = chart.getDatasetMeta(0)?.data || [];
+                const xAxis = chart.scales?.x;
+
+                bars.forEach((bar, index) => {
+                    if (!bar) {
+                        return;
+                    }
+                    const value = data[index];
+                    if (typeof value === 'number') {
+                        ctx.fillStyle = '#0d47a1';
+                        ctx.font = '12px Inter, sans-serif';
+                        ctx.fillText(`${value.toFixed(1)}%`, bar.x, bar.y - 14);
+                    }
+                    const breakdown = units[index];
+                    if (breakdown && (breakdown.passed || breakdown.total)) {
+                        ctx.fillStyle = '#ff0000';
+                        ctx.font = '600 12px Inter, sans-serif';
+                        const bottomLimit = chart.height - 12;
+                        const rawY = (xAxis?.bottom ?? chart.chartArea.bottom) + 8;
+                        const breakdownY = Math.min(bottomLimit, rawY);
+                        ctx.fillText(`${breakdown.passed}/${breakdown.total}`, bar.x, breakdownY);
+                    }
+                });
+
+                ctx.restore();
+            },
+        };
+
+        return {
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Weekly Total FPY',
+                        data: values,
+                        backgroundColor: barColors,
+                        hoverBackgroundColor: barColors,
+                        borderRadius: 8,
+                        maxBarThickness: 40,
+                        unitBreakdown,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        bottom: 36,
+                    },
+                },
+                plugins: {
+                    legend: { display: false },
+                    title: {
+                        display: true,
+                        text: `Quarterly FPY - ${quarterMeta.label}`,
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                const value =
+                                    typeof context.parsed?.y === 'number'
+                                        ? context.parsed.y
+                                        : (typeof context.parsed === 'number' ? context.parsed : 0);
+                                return `${context.dataset.label}: ${value.toFixed(2)}%`;
+                            },
+                        },
+                    },
+                },
+                onClick: (_, elements) => {
+                    if (!elements || elements.length === 0) {
+                        return;
+                    }
+                    const element = elements[0];
+                    if (element.datasetIndex !== 0) {
+                        return;
+                    }
+                    const week = sortedQuarterWeeks[element.index];
+                    focusWeekFromQuarter(week);
+                    scrollToWeekly();
+                },
+                onHover: (event, elements, chart) => {
+                    if (!chart) {
+                        return;
+                    }
+                    const isClickable =
+                        elements &&
+                        elements.length > 0 &&
+                        elements[0].datasetIndex === 0;
+                    chart.canvas.style.cursor = isClickable ? 'pointer' : 'default';
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            autoSkip: false,
+                            maxRotation: 45,
+                            minRotation: 45,
+                        },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        suggestedMax: 120,
+                        ticks: { callback: (value) => `${value}%` },
+                        title: { display: true, text: 'FPY (%)' },
+                    },
+                },
+            },
+            plugins: [quarterValueLabelPlugin],
+        };
+    }, [quarterMeta, sortedQuarterWeeks, focusWeekFromQuarter, scrollToWeekly, selectedWeek]);
+
     const goOlderWeek = () => setSelectedWeekIndex((idx) => Math.min(idx + 1, maxWeekIndex));
     const goNewerWeek = () => setSelectedWeekIndex((idx) => Math.max(idx - 1, 0));
 
     return (
         <div className="fpy-container">
+            <div className="fpy-header" ref={weeklySectionRef}>
+                <div>
+                    <h2>Quarterly FPY</h2>
+                    <p className="fpy-subtitle">
+                        Weekly total FPY for {quarterMeta?.label || 'selected quarter'}
+                    </p>
+                </div>
+                <div className="fpy-controls">
+                    <label>
+                        Quarter Date
+                        <input
+                            type="date"
+                            value={quarterDate}
+                            onChange={(e) => setQuarterDate(e.target.value || todayISO())}
+                        />
+                    </label>
+                </div>
+            </div>
+
+            {quarterError && <div className="fpy-error">{quarterError}</div>}
+            {quarterLoading && <div>Loading quarterly FPY...</div>}
+
+            {!quarterLoading && quarterChartConfig && (
+                <div className="combined-chart-card">
+                    <div className="chart-wrapper">
+                        <Bar
+                            data={quarterChartConfig.data}
+                            options={quarterChartConfig.options}
+                            plugins={quarterChartConfig.plugins}
+                        />
+                    </div>
+                    <div className="chart-footnote">
+                        {quarterMeta
+                            ? `Showing ${quarterWeeks.length} week${quarterWeeks.length === 1 ? '' : 's'} between ${quarterMeta.startISO} and ${quarterMeta.endISO}.`
+                            : ''}
+                    </div>
+                </div>
+            )}
+
+            {!quarterLoading && !quarterChartConfig && (
+                <div className="fpy-empty-state">
+                    {quarterMeta
+                        ? `No FPY data found for ${quarterMeta.label}.`
+                        : 'Select a quarter to load FPY data.'}
+                </div>
+            )}
+
             <div className="fpy-header">
                 <div>
                     <h2>FPY Stats</h2>
