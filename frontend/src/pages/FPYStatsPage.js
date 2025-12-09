@@ -75,6 +75,15 @@ const getQuarterDetails = (isoDate) => {
     };
 };
 
+const shiftQuarterISO = (isoDate, offset) => {
+    const base = safeDate(isoDate || todayISO());
+    if (!base || !Number.isFinite(offset)) {
+        return todayISO();
+    }
+    const newDate = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + offset * 3, 1));
+    return toISODate(newDate);
+};
+
 const formatWeekEndLabel = (endISO) => {
     const endDate = safeDate(endISO);
     if (!endDate) {
@@ -95,6 +104,9 @@ const FPYStatsPage = () => {
     const [quarterWeeks, setQuarterWeeks] = useState([]);
     const [quarterLoading, setQuarterLoading] = useState(false);
     const [quarterError, setQuarterError] = useState('');
+
+    const goPrevQuarter = () => setQuarterDate((prev) => shiftQuarterISO(prev, -1));
+    const goNextQuarter = () => setQuarterDate((prev) => shiftQuarterISO(prev, 1));
 
     const fetchStats = async () => {
         setLoading(true);
@@ -201,8 +213,8 @@ const FPYStatsPage = () => {
                     return (
                         weekStart &&
                         weekEnd &&
-                        weekEnd >= quarterMeta.startDate &&
-                        weekStart <= quarterMeta.endDate &&
+                        weekStart >= quarterMeta.startDate &&
+                        weekEnd <= quarterMeta.endDate &&
                         hasUnits
                     );
                 });
@@ -554,6 +566,9 @@ const FPYStatsPage = () => {
                     </p>
                 </div>
                 <div className="fpy-controls">
+                    <button type="button" className="fpy-nav-button" onClick={goPrevQuarter} aria-label="Previous quarter">
+                        {'<'}
+                    </button>
                     <label>
                         Quarter Date
                         <input
@@ -562,6 +577,9 @@ const FPYStatsPage = () => {
                             onChange={(e) => setQuarterDate(e.target.value || todayISO())}
                         />
                     </label>
+                    <button type="button" className="fpy-nav-button" onClick={goNextQuarter} aria-label="Next quarter">
+                        {'>'}
+                    </button>
                 </div>
             </div>
 
