@@ -14,9 +14,19 @@ if not exist "%PG_DUMP_PATH%" (
     goto :eof
 )
 
-REM --- Database Credentials (from your .env file) ---
-REM Load environment variables from backend/.env
-for /f "usebackq delims=" %%a in ("backend\.env") do set %%a
+REM --- Resolve project paths and load environment variables ---
+SET "SCRIPT_DIR=%~dp0"
+SET "ENV_FILE=%SCRIPT_DIR%backend\.env"
+
+if not exist "%ENV_FILE%" (
+    echo ERROR: backend\.env not found at the expected location:
+    echo %ENV_FILE%
+    echo Please ensure the repository is intact and try again.
+    goto :eof
+)
+
+REM Load environment variables from backend\.env (works even when scheduled)
+for /f "usebackq delims=" %%a in ("%ENV_FILE%") do set %%a
 
 REM --- Backup Configuration ---
 SET "BACKUP_DIR=N:\_Tom\quality backup\db"
