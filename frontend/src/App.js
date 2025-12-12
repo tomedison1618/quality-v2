@@ -9,6 +9,7 @@ import Header from './components/layout/Header'; // Import the Header component
 // Import all your pages
 import HomePage from './pages/HomePage';
 import ChecklistDetailPage from './pages/ChecklistDetailPage';
+import ChecklistManagementPage from './pages/ChecklistManagementPage';
 import ModelManagementPage from './pages/ModelManagementPage';
 import ManifestPage from './pages/ManifestPage';
 import WeeklyReportsPage from './pages/WeeklyReportsPage';
@@ -40,6 +41,7 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
                 <Route path="/shipment/:id" element={<ProtectedRoute><ChecklistDetailPage /></ProtectedRoute>} />
+                <Route path="/manage-checklist" element={<ProtectedRoute><ChecklistManagementPage /></ProtectedRoute>} />
                 
                 <Route path="/manage-models" element={<ProtectedRoute><ModelManagementPage /></ProtectedRoute>} />
                 <Route path="/manifest" element={<ProtectedRoute><ManifestPage /></ProtectedRoute>} />

@@ -79,6 +79,10 @@ export const checkOriginalSerialUnique = (originalSerialNumber) => api.get('/uni
 
 // Checklist API calls
 export const saveChecklistResponse = (responseData) => api.post('/checklist/responses', responseData);
+export const getChecklistMasterItems = () => api.get('/checklist/items/manage');
+export const createChecklistMasterItem = (itemData) => api.post('/checklist/items', itemData);
+export const updateChecklistMasterItem = (itemId, itemData) => api.put(`/checklist/items/${itemId}`, itemData);
+export const deleteChecklistMasterItem = (itemId) => api.delete(`/checklist/items/${itemId}`);
 
 export default api;
 

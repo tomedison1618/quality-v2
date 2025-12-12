@@ -41,6 +41,10 @@ const Header = () => {
                     )}
                     
                     {isUserAdmin && (
+                        <NavLink to="/manage-checklist" className={({ isActive }) => isActive ? 'active-link' : ''}>Manage Checklist</NavLink>
+                    )}
+                    
+                    {isUserAdmin && (
                         <NavLink to="/manage-users" className={({ isActive }) => isActive ? 'active-link' : ''}>Manage Users</NavLink>
                     )}
                 </nav>
