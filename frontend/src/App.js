@@ -20,11 +20,16 @@ import FPYStatsPage from './pages/FPYStatsPage';
 
 import './App.css';
 
-const ProtectedRoute = ({ children }) => {
+const ProtectedRoute = ({ children, allowedRoles }) => {
     const { user } = useAuth();
     if (!user) {
         return <Navigate to="/login" replace />;
     }
+
+    if (allowedRoles?.length && !allowedRoles.includes(user.role)) {
+        return <Navigate to="/" replace />;
+    }
+
     return children;
 };
 
@@ -41,13 +46,13 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
                 <Route path="/shipment/:id" element={<ProtectedRoute><ChecklistDetailPage /></ProtectedRoute>} />
-                <Route path="/manage-checklist" element={<ProtectedRoute><ChecklistManagementPage /></ProtectedRoute>} />
+                <Route path="/manage-checklist" element={<ProtectedRoute allowedRoles={['admin']}><ChecklistManagementPage /></ProtectedRoute>} />
                 
-                <Route path="/manage-models" element={<ProtectedRoute><ModelManagementPage /></ProtectedRoute>} />
+                <Route path="/manage-models" element={<ProtectedRoute allowedRoles={['admin', 'user']}><ModelManagementPage /></ProtectedRoute>} />
                 <Route path="/manifest" element={<ProtectedRoute><ManifestPage /></ProtectedRoute>} />
                 <Route path="/weekly-reports" element={<ProtectedRoute><WeeklyReportsPage /></ProtectedRoute>} />
                 <Route path="/fpy-stats" element={<FPYStatsPage />} />
-                <Route path="/manage-users" element={<ProtectedRoute><UserManagementPage /></ProtectedRoute>} />
+                <Route path="/manage-users" element={<ProtectedRoute allowedRoles={['admin']}><UserManagementPage /></ProtectedRoute>} />
                 <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
                 <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
             </Routes>

@@ -1,8 +1,25 @@
 from psycopg import errors
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
 from db import get_db_connection, get_dict_cursor
 
 models_bp = Blueprint('models', __name__)
+
+@models_bp.before_request
+def require_editor_role():
+    """
+    Ensure only admin/user roles can hit any Manage Models endpoint.
+    Skip OPTIONS to keep CORS preflight working.
+    """
+    if request.method == 'OPTIONS':
+        return None
+
+    verify_jwt_in_request()
+    current_user = get_jwt_identity()
+    if not current_user or current_user.get('role') not in ['admin', 'user']:
+        return jsonify(msg="Editor or administrator rights required to perform this action."), 403
+
+    return None
 
 # [CREATE] Add a new model
 # THE FIX: Stacked decorators to handle both '/models' and '/models/'

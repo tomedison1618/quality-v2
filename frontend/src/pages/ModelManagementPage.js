@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getModels, addModel, updateModel, checkPartNumber } from '../services/apiService';
 import useDebounce from '../hooks/useDebounce';
+import { useAuth } from '../contexts/AuthContext';
 import './ModelManagementPage.css';
 
 const ModelManagementPage = () => {
+    const { user } = useAuth();
+    const canManageModels = user && (user.role === 'admin' || user.role === 'user');
+
     // ... (All state variables and functions remain the same as the last version) ...
     const [models, setModels] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -119,6 +123,15 @@ const ModelManagementPage = () => {
             alert(err.response?.data?.error || 'Failed to update model.');
         }
     };
+
+    if (!canManageModels) {
+        return (
+            <div className="model-management-page">
+                <h2>Manage Product Models</h2>
+                <p className="error-message">You do not have permission to access this module.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="model-management-page">
